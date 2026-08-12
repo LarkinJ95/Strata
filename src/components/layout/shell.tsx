@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Users } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Settings, Users } from "lucide-react";
 import { useTransition } from "react";
 import type { SessionUser } from "@/lib/types";
 import { clearSession } from "@/lib/session-client";
@@ -13,6 +13,7 @@ const STAFF_NAV = [
   { href: "/queue", label: "Compliance Queue", icon: AlertTriangle },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/inspections", label: "Inspector Workspace", icon: ClipboardCheck },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const PORTAL_NAV = [
