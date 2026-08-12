@@ -19,6 +19,11 @@ export default async function PortalPage() {
     include: { facility: true, client: true, _count: { select: { inventoryItems: true, repairs: true } } },
     orderBy: { buildingNumber: "asc" },
   });
+  const facilities = await db.facility.findMany({
+    where: { organizationId: user.organizationId, ...(user.clientId ? { clientId: user.clientId } : {}) },
+    include: { _count: { select: { buildings: true } } },
+    orderBy: { name: "asc" },
+  });
   const openRepairs = await db.repair.count({
     where: { ...scope, status: { notIn: ["closed", "cancelled"] } },
   });
@@ -35,6 +40,12 @@ export default async function PortalPage() {
         <Kpi label="Open repairs" value={openRepairs} />
         <Kpi label="Signed-in as" value={user.roleName} />
       </div>
+      <section className="mt-5">
+        <SectionTitle>Assigned facilities</SectionTitle>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {facilities.map((facility) => <Panel key={facility.id} className="p-4"><div className="mono-id text-[11px] text-teal-dim">{facility.facilityId}</div><div className="font-display text-base font-semibold">{facility.name}</div><div className="mt-1 text-xs text-ink-3">{facility.address || [facility.city, facility.state].filter(Boolean).join(", ") || "Address not recorded"}</div><div className="mt-2 text-xs text-ink-3">{facility._count.buildings} buildings</div></Panel>)}
+        </div>
+      </section>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {buildings.map((b) => (
           <Link key={b.id} href={`/buildings/${b.id}`}>

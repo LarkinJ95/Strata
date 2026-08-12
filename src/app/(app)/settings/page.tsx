@@ -10,7 +10,7 @@ export default async function SettingsPage() {
   const user = await getSession();
   if (!user) redirect("/login");
   if (user.isClient || user.isContractor) redirect(user.isClient ? "/portal" : "/dashboard");
-  const [organization, profile, users, roles, labs, contractors, profiles] = await Promise.all([
+  const [organization, profile, users, roles, labs, contractors, profiles, clients] = await Promise.all([
     db.organization.findUniqueOrThrow({ where: { id: user.organizationId } }),
     db.user.findUniqueOrThrow({ where: { id: user.id } }),
     db.user.findMany({ where: { organizationId: user.organizationId }, include: { role: true, client: true }, orderBy: { name: "asc" } }),
@@ -18,6 +18,7 @@ export default async function SettingsPage() {
     db.laboratory.findMany({ where: { organizationId: user.organizationId }, orderBy: { name: "asc" } }),
     db.contractor.findMany({ where: { organizationId: user.organizationId }, orderBy: { name: "asc" } }),
     db.regulatoryProfile.findMany({ where: { organizationId: user.organizationId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
+    db.client.findMany({ where: { organizationId: user.organizationId }, select: { id: true, name: true, clientNumber: true }, orderBy: { name: "asc" } }),
   ]);
   const canManageUsers = user.permissions.includes("users.manage");
 
@@ -28,7 +29,7 @@ export default async function SettingsPage() {
         <Panel className="p-5"><SectionTitle>My profile</SectionTitle><ProfileSettingsForm user={profile} /></Panel>
         <Panel className="p-5"><SectionTitle>Organization profile</SectionTitle>{canManageUsers ? <OrganizationSettingsForm organization={organization} /> : <p className="text-sm text-ink-3">Only organization administrators can change company details.</p>}</Panel>
       </div>
-      {canManageUsers ? <AdministrationSettings laboratories={labs} contractors={contractors} regulatoryProfiles={profiles} roles={roles} users={users} /> : <Panel className="p-5"><SectionTitle>Administration</SectionTitle><p className="text-sm text-ink-3">Only organization administrators can configure users, roles, laboratories, contractors, and regulatory profiles.</p></Panel>}
+      {canManageUsers ? <AdministrationSettings laboratories={labs} contractors={contractors} regulatoryProfiles={profiles} roles={roles} users={users} clients={clients} /> : <Panel className="p-5"><SectionTitle>Administration</SectionTitle><p className="text-sm text-ink-3">Only organization administrators can configure users, roles, laboratories, contractors, and regulatory profiles.</p></Panel>}
     </div>
   </div>;
 }

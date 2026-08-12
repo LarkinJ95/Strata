@@ -21,11 +21,13 @@ async function main() {
   const password = required("STRATA_ADMIN_PASSWORD");
   const organizationId = crypto.randomUUID();
   const roleId = crypto.randomUUID();
+  const clientViewerRoleId = crypto.randomUUID();
   const userId = crypto.randomUUID();
   const passwordHash = await bcrypt.hash(password, 12);
   const statements = [
     `INSERT INTO "Organization" ("id", "name", "slug", "legalName", "settings", "createdAt", "updatedAt") VALUES (${sql(organizationId)}, ${sql(organizationName)}, ${sql(organizationSlug)}, ${sql(organizationName)}, '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`,
     `INSERT INTO "Role" ("id", "organizationId", "name", "slug", "description", "permissions", "isSystem", "createdAt", "updatedAt") VALUES (${sql(roleId)}, ${sql(organizationId)}, 'Organization Administrator', 'org_admin', 'Full organization administration', ${sql(JSON.stringify(ROLE_PRESETS.org_admin))}, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`,
+    `INSERT INTO "Role" ("id", "organizationId", "name", "slug", "description", "permissions", "isSystem", "createdAt", "updatedAt") VALUES (${sql(clientViewerRoleId)}, ${sql(organizationId)}, 'Client Viewer', 'client_viewer', 'Read-only portal access for one client', ${sql(JSON.stringify(ROLE_PRESETS.client_viewer))}, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`,
     `INSERT INTO "User" ("id", "organizationId", "roleId", "email", "passwordHash", "name", "status", "mfaEnabled", "createdAt", "updatedAt") VALUES (${sql(userId)}, ${sql(organizationId)}, ${sql(roleId)}, ${sql(adminEmail)}, ${sql(passwordHash)}, ${sql(adminName)}, 'active', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`,
   ].join("\n");
   const directory = await mkdtemp(join(tmpdir(), "strata-bootstrap-"));

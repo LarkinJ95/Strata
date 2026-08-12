@@ -111,7 +111,14 @@ export async function saveRole(form: FormData) {
 export async function saveUser(form: FormData) {
   const user = await administrator(form); const id = value(form, "id"); const roleId = value(form, "roleId");
   const role = await db.role.findFirst({ where: { id: roleId, organizationId: user.organizationId } }); if (!role) throw new Error("Select a valid organization role");
-  const data = { name: value(form, "name"), email: value(form, "email").toLowerCase(), title: value(form, "title") || null, phone: value(form, "phone") || null, roleId, status: value(form, "status") || "active" };
+  const requestedClientId = value(form, "clientId");
+  const clientId = requestedClientId || null;
+  if (clientId) {
+    const client = await db.client.findFirst({ where: { id: clientId, organizationId: user.organizationId } });
+    if (!client) throw new Error("Select a valid client assignment");
+  }
+  if (role.slug.startsWith("client_") && !clientId) throw new Error("Client Viewer users must be assigned to a client");
+  const data = { name: value(form, "name"), email: value(form, "email").toLowerCase(), title: value(form, "title") || null, phone: value(form, "phone") || null, roleId, clientId: role.slug.startsWith("client_") ? clientId : null, status: value(form, "status") || "active" };
   if (!data.name || !data.email.includes("@")) throw new Error("Name and a valid email are required");
   const previous = id ? await db.user.findFirst({ where: { id, organizationId: user.organizationId } }) : null;
   if (id && !previous) throw new Error("User not found");
