@@ -234,8 +234,8 @@ export function InventoryEditor({
         {item && <input type="hidden" name="id" value={item.id} />}
         <input type="hidden" name="buildingId" value={buildingId} />
         <Grid>
-          {item && <Field label="Item number"><input name="inventoryCode" defaultValue={item.inventoryCode} required /></Field>}
-          <Field label="Internal item #"><input name="internalCode" defaultValue={item?.internalCode ?? ""} /></Field>
+          {item && <Field label="Item #"><input name="inventoryCode" defaultValue={item.inventoryCode} required /></Field>}
+          <Field label="Internal inventory #"><input name="internalCode" defaultValue={item?.internalCode ?? ""} placeholder="Building #-Item #" /></Field>
           <Field label="Material"><input name="materialDescription" defaultValue={item?.materialDescription ?? ""} required /></Field>
           <Field label="Category">
             <select name="materialCategory" defaultValue={item?.materialCategory ?? "Miscellaneous"}>

@@ -438,7 +438,7 @@ model InventoryItem {
   activities       ActivityEvent[]
   discoveries      SuspectMaterial[]
 
-  @@unique([organizationId, inventoryCode])
+  @@unique([organizationId, internalCode])
   @@index([organizationId, buildingId])
   @@index([acmClassification])
   @@index([condition])

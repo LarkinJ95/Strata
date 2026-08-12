@@ -171,6 +171,9 @@ export async function saveInventory(form: FormData) {
   if (id) {
     const inv = await db.inventoryItem.findFirst({ where: { id, organizationId: user.organizationId } });
     if (!inv) throw new Error("Inventory not found");
+    const building = await db.building.findUnique({ where: { id: inv.buildingId }, select: { buildingNumber: true } });
+    if (!building) throw new Error("Building not found");
+    const internalCode = patch.internalCode || `${building.buildingNumber}-${patch.inventoryCode}`;
     if (qty != null && qty !== inv.currentQuantity) {
       await db.inventoryQuantityHistory.create({
         data: {
@@ -194,7 +197,7 @@ export async function saveInventory(form: FormData) {
         },
       });
     }
-    await db.inventoryItem.update({ where: { id }, data: patch });
+    await db.inventoryItem.update({ where: { id }, data: { ...patch, internalCode } });
     await persistBuildingCompliance(inv.buildingId);
     await audit({ user, action: "inventory.update", recordType: "inventory", recordId: id, previousValue: inv, newValue: patch });
     revalidatePath(`/buildings/${inv.buildingId}`);
@@ -205,8 +208,9 @@ export async function saveInventory(form: FormData) {
   const building = await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } });
   if (!building) throw new Error("Building not found");
   const last = await db.inventoryItem.findFirst({ where: { buildingId }, orderBy: { inventoryCode: "desc" } });
-  const n = last ? Number(String(last.inventoryCode.split("-").pop()) || 0) + 1 : 1;
-  const code = `${building.buildingNumber.replace("-", "")}-${String(n).padStart(3, "0")}`;
+  const n = last ? Number(String(last.inventoryCode).split("-").pop() || 0) + 1 : 1;
+  const itemNumber = patch.inventoryCode || String(n).padStart(3, "0");
+  const internalCode = patch.internalCode || `${building.buildingNumber}-${itemNumber}`;
   const created = await db.inventoryItem.create({
     data: {
       ...patch,
@@ -214,7 +218,8 @@ export async function saveInventory(form: FormData) {
       clientId: building.clientId,
       facilityId: building.facilityId,
       buildingId,
-      inventoryCode: patch.inventoryCode || code,
+      inventoryCode: itemNumber,
+      internalCode,
     },
   });
   if (qty != null) {

@@ -356,7 +356,7 @@ export async function reconcileSample(input: {
       where: { buildingId: sample.buildingId },
       orderBy: { inventoryCode: "desc" },
     });
-    const code = nextCode(sample.building.buildingNumber.replace("-", ""), last?.inventoryCode);
+    const code = nextCode("", last?.inventoryCode).replace(/^-/, "");
     const layer = sample.layers[0];
     const item = await db.inventoryItem.create({
       data: {
@@ -365,6 +365,7 @@ export async function reconcileSample(input: {
         facilityId: sample.building.facilityId,
         buildingId: sample.buildingId,
         inventoryCode: code,
+        internalCode: `${sample.building.buildingNumber}-${code}`,
         floor: input.newItem.floor ?? sample.floor,
         room: input.newItem.room ?? sample.room,
         specificLocation: input.newItem.location ?? sample.location,
@@ -722,7 +723,7 @@ export async function createSuspectMaterial(input: {
     where: { buildingId: building.id },
     orderBy: { inventoryCode: "desc" },
   });
-  const code = nextCode(building.buildingNumber.replace("-", ""), last?.inventoryCode);
+  const code = nextCode("", last?.inventoryCode).replace(/^-/, "");
   const item = await db.inventoryItem.create({
     data: {
       organizationId: user.organizationId,
@@ -730,6 +731,7 @@ export async function createSuspectMaterial(input: {
       facilityId: building.facilityId,
       buildingId: building.id,
       inventoryCode: code,
+      internalCode: `${building.buildingNumber}-${code}`,
       floor: input.floor,
       room: input.room,
       specificLocation: input.location,
