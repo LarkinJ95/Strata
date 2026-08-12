@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import fs from "fs";
-import path from "path";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { activity, audit } from "@/lib/audit";
 import { persistBuildingCompliance } from "@/lib/compliance";
+import { putUpload } from "@/lib/storage";
 
 async function actor() {
   const user = await getSession();
@@ -779,12 +778,7 @@ export async function uploadPhoto(formData: FormData) {
     ? await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } })
     : null;
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const safe = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-  const dir = path.join(process.cwd(), "uploads");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, safe), buf);
-  const storageKey = `uploads/${safe}`;
+  const storageKey = await putUpload({ organizationId: user.organizationId, category: "photos", file });
 
   const photo = await db.photo.create({
     data: {
@@ -794,7 +788,7 @@ export async function uploadPhoto(formData: FormData) {
       storageKey,
       originalFilename: file.name,
       mimeType: file.type || "application/octet-stream",
-      size: buf.length,
+      size: file.size,
       capturedAt: new Date(),
       uploadedById: user.id,
       photographerId: user.id,

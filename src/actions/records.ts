@@ -82,7 +82,7 @@ export async function saveFacility(form: FormData) {
     },
   });
   revalidatePath(`/clients/${clientId}`);
-  return created.id;
+  void created;
 }
 
 export async function saveBuilding(form: FormData) {

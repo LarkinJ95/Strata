@@ -1,0 +1,18 @@
+building_number,fa_code,name,floor_name,area_type,use_description,notes
+HLM-01,FA-01-LOB,Main lobby,Level 1,other,Public reception,
+HLM-01,FA-01-REC,Records vault,Level 1,room,File storage,Original 9x9 tile throughout.
+HLM-01,FA-02-COR,Level 2 corridor,Level 2,corridor,Office circulation,
+HLM-01,FA-02-CON,Conference 210,Level 2,room,Meetings,Renovated 2008 — non-ACM ceiling.
+HLM-02,FA-SH-BAY,High bay,Shop floor,other,Fabrication,Active production. Escort required.
+HLM-02,FA-SH-MECH,Mezz mechanical,Shop floor,mechanical,Process steam headers,TSI on 8-inch mains.
+HLM-03,FA-BH-TUN,Pipe tunnel,Basement,confined_space,Steam / condensate,Permit-required confined space.
+HLM-03,FA-BH-BLR,Boiler room,Operating floor,mechanical,Two package boilers,Hearing protection.
+HLM-03,FA-BH-MEZ,Feedwater mezzanine,Mezzanine,mechanical,DA tank and pumps,
+HLM-W1,FA-W-DOCK,Loading dock,Warehouse floor,other,Receiving,
+HLM-W1,FA-W-MEZ,Mezzanine offices,Mezzanine offices,room,Clerical,
+CCHA-A,FA-A-BMECH,House mechanical,Basement,mechanical,Domestic boilers,
+CCHA-A,FA-A-LAU,Resident laundry,Basement,room,Laundry,9x9 tile.
+CCHA-A,FA-A-COR2,Level 2 corridor,Level 2,corridor,Residential corridor,
+CCHA-A,FA-A-214,Unit 214,Level 2,room,2-bedroom apartment,Photograph only with written approval.
+CCHA-B,FA-B-COR5,Level 5 corridor,Level 5,corridor,Rehab floor corridor,Tile scheduled for removal.
+CCHA-B,FA-B-512,Unit 512,Level 5,room,Gutted apartment,Kitchen/bath demo pending lab results.

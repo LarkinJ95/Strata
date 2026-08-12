@@ -1,9 +1,12 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit", "svg-to-pdfkit"],
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "bcryptjs", "pdfkit", "svg-to-pdfkit"],
   allowedDevOrigins: [
     "3000-iktntbmmo03x8m31nddfy.e2b.app",
     "*.e2b.app",

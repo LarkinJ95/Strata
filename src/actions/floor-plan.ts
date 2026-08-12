@@ -1,10 +1,9 @@
 "use server";
 
-import fs from "fs";
-import path from "path";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { putUpload } from "@/lib/storage";
 
 export async function uploadFloorPlan(formData: FormData) {
   const user = await getSession();
@@ -19,12 +18,7 @@ export async function uploadFloorPlan(formData: FormData) {
   });
   if (!building) throw new Error("Building not found");
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const safe = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-  const dir = path.join(process.cwd(), "uploads", "plans");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, safe), buf);
-  const storageKey = `uploads/plans/${safe}`;
+  const storageKey = await putUpload({ organizationId: user.organizationId, category: "plans", file });
 
   await db.floorPlan.create({
     data: {

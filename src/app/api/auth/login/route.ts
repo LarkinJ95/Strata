@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { applySessionCookies, createSession, verifyPassword } from "@/lib/auth";
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  const body = await req.json().catch(() => null) as { email?: unknown; password?: unknown } | null;
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
   if (!email || !password) {

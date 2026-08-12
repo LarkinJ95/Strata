@@ -23,6 +23,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const org = await db.organization.findUnique({ where: { id: user.organizationId } });
   const pdf = await buildInspectionPacket({
+    organizationId: user.organizationId,
     name: building.name,
     buildingNumber: building.buildingNumber,
     address: building.address,

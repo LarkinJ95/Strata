@@ -10,18 +10,22 @@ export type { SessionUser } from "./types";
 
 export { SESSION_COOKIE } from "./session-cookie";
 import { SESSION_COOKIE, serializeSessionCookie, serializeClientSessionCookie } from "./session-cookie";
-const secret = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "strata-dev-secret"
-);
+export function authSecret() {
+  const configured = process.env.AUTH_SECRET;
+  if (configured) return new TextEncoder().encode(configured);
+  if (process.env.NODE_ENV !== "production") return new TextEncoder().encode("strata-dev-secret");
+  throw new Error("AUTH_SECRET must be configured in production");
+}
 
 export async function sessionCookieOptions(expiresAt: Date) {
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
     path: "/",
     expires: expiresAt,
-    sameSite: "none" as const,
-    secure: true,
-    partitioned: true,
+    sameSite: isProduction ? ("none" as const) : ("lax" as const),
+    secure: isProduction,
+    partitioned: isProduction,
   };
 }
 
@@ -43,7 +47,7 @@ export async function createSession(userId: string) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("12h")
-    .sign(secret);
+    .sign(authSecret());
 
   const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
   await db.session.create({ data: { userId, token, expiresAt } }).catch(() => undefined);
@@ -80,7 +84,7 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!token) return null;
 
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, authSecret());
     const uid = payload.uid as string;
     const session = await db.session.findUnique({ where: { token } }).catch(() => null);
     if (session && session.expiresAt < new Date()) {
@@ -124,7 +128,7 @@ export async function getSession(): Promise<SessionUser | null> {
 export async function sessionFromToken(token?: string | null): Promise<SessionUser | null> {
   if (!token) return getSession();
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, authSecret());
     const uid = payload.uid as string;
     const user = await db.user.findUnique({
       where: { id: uid },

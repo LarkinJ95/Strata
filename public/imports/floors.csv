@@ -1,0 +1,21 @@
+building_number,floor_name,level,occupancy,square_footage,notes
+HLM-01,Level 1,1,Lobby / records,9800,Public lobby and file rooms.
+HLM-01,Level 2,2,Offices,9800,Open office and conference.
+HLM-01,Level 3,3,Executive / vacant file,9000,Former drafting loft.
+HLM-02,Shop floor,1,Production,112000,High bay; crane rails east–west.
+HLM-03,Basement,-1,Pipe tunnel / pits,6200,Confined space permit required.
+HLM-03,Operating floor,1,Boilers / pumps,9200,Hearing protection required.
+HLM-03,Mezzanine,2,Feedwater / electrical,3000,
+HLM-W1,Warehouse floor,1,Storage / dock,52000,
+HLM-W1,Mezzanine offices,2,Clerical,12000,1979 build-out over dock.
+CCHA-A,Basement,-1,Mechanical / laundry,9000,Resident laundry and house boilers.
+CCHA-A,Level 1,1,Residential / lobby,11500,
+CCHA-A,Level 2,2,Residential,11500,
+CCHA-A,Level 3,3,Residential,11500,
+CCHA-A,Level 4,4,Residential,11500,
+CCHA-A,Level 5,5,Residential,11500,
+CCHA-A,Level 6,6,Residential,11500,
+CCHA-B,Basement,-1,Mechanical,9000,
+CCHA-B,Level 1,1,Residential,11500,Occupied.
+CCHA-B,Level 5,5,Vacant rehab,11500,Units gutted; ACM floor tile still in corridors.
+CCHA-B,Level 6,6,Vacant rehab,11500,Pre-renovation sampling in progress.

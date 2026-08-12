@@ -1,7 +1,6 @@
-import fs from "fs";
-import path from "path";
 import PDFDocument from "pdfkit";
 import { ACM_LABELS, CONDITION_LABELS, formatDate, formatQty } from "@/lib/utils";
+import { canReadStorageKey, getStoredObject } from "@/lib/storage";
 
 function drawSchematic(
   doc: PDFKit.PDFDocument,
@@ -28,6 +27,7 @@ function drawSchematic(
 }
 
 type PacketBuilding = {
+  organizationId: string;
   name: string;
   buildingNumber: string;
   address: string | null;
@@ -60,15 +60,6 @@ type PacketBuilding = {
     mimeType: string;
   }[];
 };
-
-function resolveFile(storageKey: string) {
-  const candidates = [
-    path.join(process.cwd(), "public", storageKey),
-    path.join(process.cwd(), storageKey),
-    path.join(process.cwd(), "uploads", storageKey.replace(/^uploads\//, "")),
-  ];
-  return candidates.find((p) => fs.existsSync(p));
-}
 
 function header(doc: PDFKit.PDFDocument, title: string, sub: string) {
   doc.save();
@@ -244,17 +235,21 @@ export async function buildInspectionPacket(building: PacketBuilding): Promise<B
       36,
       78
     );
-    const file = resolveFile(plan.storageKey);
     const boxX = 36;
     const boxY = 98;
     const boxW = doc.page.width - 72;
     const boxH = 620;
     doc.save().strokeColor("#0b857f").lineWidth(1).roundedRect(boxX, boxY, boxW, boxH, 4).stroke().restore();
 
-    const raster = file && (/\.(png|jpe?g)$/i.test(file) || /png|jpeg|jpg/.test(plan.mimeType));
-    if (raster && file) {
+    const raster = /png|jpeg|jpg/.test(plan.mimeType);
+    const storedObject = raster && canReadStorageKey(building.organizationId, plan.storageKey)
+      ? await getStoredObject(plan.storageKey)
+      : null;
+    if (raster && storedObject) {
       try {
-        doc.image(file, boxX + 8, boxY + 8, { fit: [boxW - 16, boxH - 16], align: "center", valign: "center" });
+        doc.image(Buffer.from(await storedObject.arrayBuffer()), boxX + 8, boxY + 8, {
+          fit: [boxW - 16, boxH - 16], align: "center", valign: "center",
+        });
       } catch {
         doc.font("Helvetica").fontSize(10).fillColor("#b42318").text("Raster drawing could not be embedded.", boxX + 24, boxY + 40);
       }

@@ -121,7 +121,9 @@ After a reset, also run `npx tsx prisma/seed-spaces.ts` to restore MH-01 floors,
 
 ## Production notes
 
-- Change `AUTH_SECRET` in `.env`.
-- For Postgres, set `DATABASE_URL` and change `provider` in `prisma/schema.prisma`.
-- Sessions use the `strata_session` cookie. If you embed the app in a cross-site iframe, cookies may not be sent (`SameSite=Lax`); the app also accepts `?access=` JWT on URLs for that case.
-- Bind the server to `0.0.0.0` if you need it reachable outside localhost (already set in `npm run dev`).
+- The production runtime is Cloudflare Workers/OpenNext. D1 database binding is `DB` (`strata`); uploaded files use the private R2 binding `FILES` (`strata`); Next.js revalidation uses `strata-asbestos-compliance-opennext-cache`.
+- The intended production hostname is `strata.abateiq.com`. It is declared as a Worker custom domain in `wrangler.jsonc` and takes effect when the Worker is deployed.
+- Set `AUTH_SECRET` as a Cloudflare Worker secret before deployment. It is required in production and must be a long, random value; do not put it in `wrangler.jsonc` or commit it.
+- Apply schema migrations with `npm run db:migrate:remote`. `prisma/dev.db` and the seed scripts are demo/local-development assets only and are not imported into D1 automatically.
+- Deploy with `npm run deploy` (OpenNext build followed by Cloudflare deployment). If Vanilla is used, configure its deploy command as `npm run deploy` rather than `npx wrangler deploy`.
+- Provision the first organization, role, and administrator through a controlled bootstrap process before allowing production sign-in. Do not import the included demo accounts into customer production data.

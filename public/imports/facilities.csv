@@ -1,0 +1,4 @@
+client_number,facility_id,name,address,city,state,postal_code,latitude,longitude,primary_contact,environmental_contact,emergency_contact,notes,status
+HLM-220,HLM-RR,River Rouge Plant,4400 W Jefferson Ave,Detroit,MI,48209,42.3124,-83.0931,Plant Engineering,Diane Okonkwo,Security 313-555-6199,Main production campus. Lockout/tagout required in fabrication and boiler house.,active
+HLM-220,HLM-JW,Jefferson Warehouse,5100 W Jefferson Ave,Detroit,MI,48209,42.3148,-83.0995,Warehouse Supervisor,Diane Okonkwo,Security 313-555-6199,Unheated warehouse and loading dock. Limited winter access to mezzanine.,active
+CCHA-15,CCHA-BC,Brewster Courts,2700 St Antoine St,Detroit,MI,48201,42.3441,-83.0548,Site Manager Keisha Ward,Marcus Bell,After-hours 313-555-4400,Two mid-rise residential buildings plus a community building. Occupied.,active

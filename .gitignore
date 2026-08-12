@@ -7,6 +7,9 @@ out/
 .env
 .env.local
 .env.*.local
+.dev.vars
+.wrangler/
+.open-next/
 *.log
 
 # OS metadata

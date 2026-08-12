@@ -33,12 +33,8 @@ export async function POST(req: Request) {
             ? "/inspections"
             : "/dashboard";
 
-    const target = new URL(dest, req.url);
-    target.searchParams.set("access", token);
-
-    const res = NextResponse.redirect(target, 303);
+    const res = NextResponse.redirect(new URL(dest, req.url), 303);
     applySessionCookies(res.headers, token);
-    res.headers.set("Location", `${dest}${dest.includes("?") ? "&" : "?"}access=${encodeURIComponent(token)}`);
     return res;
   } catch (err) {
     console.error("session-login failed", err);
