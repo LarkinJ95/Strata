@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d5dbe1"/><stop offset="1" stop-color="#9aa3ad"/>
+    </linearGradient>
+    <pattern id="p" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0H0V28" fill="none" stroke="#5d6670" stroke-opacity=".18" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1400" height="920" fill="url(#g)"/>
+  <rect width="1400" height="920" fill="url(#p)"/>
+  <rect x="70" y="70" width="1260" height="780" rx="18" fill="rgba(12,19,32,.18)"/>
+  <rect x="90" y="88" width="1220" height="744" rx="14" fill="rgba(255,255,255,.12)"/>
+  <circle cx="220" cy="240" r="90" fill="#5d6670" opacity=".35"/>
+  <circle cx="1180" cy="680" r="140" fill="#5d6670" opacity=".2"/>
+  <rect x="160" y="620" width="520" height="140" rx="12" fill="rgba(12,19,32,.55)"/>
+  <text x="184" y="668" fill="#e8eef6" font-family="ui-monospace,monospace" font-size="18" letter-spacing="3">FIELD RECORD</text>
+  <text x="184" y="708" fill="#ffffff" font-family="ui-sans-serif,system-ui" font-size="34" font-weight="600">9×9 floor tile</text>
+  <text x="184" y="742" fill="#c9d4e2" font-family="ui-sans-serif,system-ui" font-size="18">Corridor finish · miscellaneous</text>
+</svg>

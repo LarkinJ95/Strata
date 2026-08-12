@@ -1,0 +1,17 @@
+# Dependencies and Next.js build output
+node_modules/
+.next/
+out/
+
+# Local configuration and logs
+.env
+.env.local
+.env.*.local
+*.log
+
+# OS metadata
+.DS_Store
+
+# Runtime uploads (retain the directory guide)
+uploads/*
+!uploads/README.txt

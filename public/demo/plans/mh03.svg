@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <rect width="1600" height="1000" fill="#f4f7fb"/>
+  <rect x="40" y="36" width="1520" height="928" fill="#ffffff" stroke="#0b857f" stroke-width="3"/>
+  <text x="60" y="70" font-family="ui-sans-serif,system-ui" font-size="22" fill="#0c1320" font-weight="600">MH-03 Central Plant · Operating floor</text>
+  <rect x="80" y="120" width="900" height="800" fill="#efe4cf" stroke="#8a6a3d" stroke-width="2"/>
+  <text x="530" y="500" text-anchor="middle" font-size="28" fill="#5a4324">BOILER HALL</text>
+  <text x="530" y="536" text-anchor="middle" font-size="14" fill="#6b4a00">Breeching MH03-001 · Tank MH03-002 · Gaskets MH03-003</text>
+  <rect x="160" y="200" width="220" height="280" fill="#c9b08a" stroke="#5a4324" stroke-width="2"/>
+  <text x="270" y="350" text-anchor="middle" font-size="16">BOILER 1</text>
+  <rect x="420" y="200" width="220" height="280" fill="#c07a4a" stroke="#6b2f1c" stroke-width="2"/>
+  <text x="530" y="340" text-anchor="middle" font-size="16" fill="#fff">BOILER 2</text>
+  <text x="530" y="364" text-anchor="middle" font-size="12" fill="#fff">DAMAGED TSI</text>
+  <rect x="680" y="200" width="220" height="160" fill="#b9a078" stroke="#5a4324" stroke-width="2"/>
+  <text x="790" y="286" text-anchor="middle" font-size="16">COND. TANK</text>
+  <rect x="1020" y="120" width="480" height="380" fill="#eef1f5" stroke="#475569" stroke-width="2"/>
+  <text x="1260" y="310" text-anchor="middle" font-size="18" fill="#334155">ELECTRICAL</text>
+  <text x="1260" y="336" text-anchor="middle" font-size="12" fill="#5b6778">Cloth remnants MH03-005 · inaccessible</text>
+  <rect x="1020" y="520" width="480" height="400" fill="#d5dce3" stroke="#4d575c" stroke-width="2"/>
+  <text x="1260" y="720" text-anchor="middle" font-size="18" fill="#334155">ROOF ACCESS / COOLING</text>
+  <text x="1260" y="748" text-anchor="middle" font-size="12">Transite MH03-004</text>
+  <circle cx="530" cy="340" r="9" fill="#c23b3b"/>
+  <circle cx="790" cy="280" r="9" fill="#0b857f"/>
+</svg>

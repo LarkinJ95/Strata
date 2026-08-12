@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <rect width="1600" height="1000" fill="#f4f7fb"/>
+  <rect x="40" y="36" width="1520" height="928" fill="#ffffff" stroke="#0b857f" stroke-width="3"/>
+  <text x="60" y="70" font-family="ui-sans-serif,system-ui" font-size="22" fill="#0c1320" font-weight="600">MH-01 Main Hospital · Level 1</text>
+  <text x="60" y="94" font-family="ui-monospace,monospace" font-size="13" fill="#5b6778">Northline Environmental · field packet drawing</text>
+  <!-- lobby -->
+  <rect x="80" y="130" width="420" height="280" fill="#e8f1fc" stroke="#1b6fe0" stroke-width="2"/>
+  <text x="290" y="270" text-anchor="middle" font-size="18" fill="#1b56b5">PUBLIC LOBBY</text>
+  <text x="290" y="294" text-anchor="middle" font-size="12" fill="#5b6778">MH01-003 / MH01-004 floor tile + mastic</text>
+  <!-- corridor -->
+  <rect x="500" y="220" width="720" height="90" fill="#e6f6f5" stroke="#0b857f" stroke-width="2"/>
+  <text x="860" y="272" text-anchor="middle" font-size="16" fill="#0a6f6a">CORRIDOR A</text>
+  <!-- OR -->
+  <rect x="500" y="130" width="340" height="90" fill="#fff4e0" stroke="#c97816" stroke-width="2"/>
+  <text x="670" y="182" text-anchor="middle" font-size="16" fill="#9a5808">OR SUITE</text>
+  <!-- admin -->
+  <rect x="840" y="130" width="380" height="90" fill="#f3eaff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1030" y="182" text-anchor="middle" font-size="16" fill="#6d28d9">ADMIN 210–218</text>
+  <!-- stairs -->
+  <rect x="1220" y="130" width="280" height="180" fill="#eef1f5" stroke="#8a93a1" stroke-width="2"/>
+  <text x="1360" y="220" text-anchor="middle" font-size="16" fill="#475569">VERTICAL CORE</text>
+  <!-- mech -->
+  <rect x="80" y="440" width="520" height="480" fill="#efe4cf" stroke="#8a6a3d" stroke-width="2"/>
+  <text x="340" y="660" text-anchor="middle" font-size="20" fill="#5a4324">BASEMENT MECH-01</text>
+  <text x="340" y="688" text-anchor="middle" font-size="13" fill="#6b4a00">TSI steam mains · MH01-001 / 002 / 011</text>
+  <!-- patient -->
+  <rect x="620" y="330" width="880" height="280" fill="#e7f7f2" stroke="#0f766e" stroke-width="2"/>
+  <text x="1060" y="470" text-anchor="middle" font-size="18" fill="#0f766e">INPATIENT WING</text>
+  <text x="1060" y="496" text-anchor="middle" font-size="13" fill="#5b6778">Plaster HA-PL-01 · rooms 301–328 above</text>
+  <!-- loading -->
+  <rect x="620" y="630" width="420" height="290" fill="#fdecec" stroke="#c23b3b" stroke-width="2"/>
+  <text x="830" y="770" text-anchor="middle" font-size="16" fill="#b42318">LOADING / BOILER TIE-IN</text>
+  <rect x="1060" y="630" width="440" height="290" fill="#eef4ff" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="1280" y="770" text-anchor="middle" font-size="16" fill="#1d4ed8">EAST CONNECTOR</text>
+  <circle cx="240" cy="240" r="8" fill="#0b857f"/>
+  <circle cx="340" cy="560" r="8" fill="#c23b3b"/>
+  <circle cx="860" cy="265" r="8" fill="#c97816"/>
+</svg>

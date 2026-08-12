@@ -1,0 +1,1144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  legalName String?
+  logoPath  String?
+  address   String?
+  phone     String?
+  email     String?
+  website   String?
+  settings  String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  roles           Role[]
+  clients         Client[]
+  facilities      Facility[]
+  buildings       Building[]
+  inventoryItems  InventoryItem[]
+  samples         Sample[]
+  inspections     Inspection[]
+  repairs         Repair[]
+  removals        RemovalEvent[]
+  photos          Photo[]
+  documents       Document[]
+  laboratories    Laboratory[]
+  tasks           Task[]
+  notifications   Notification[]
+  auditEvents     AuditEvent[]
+  activities      ActivityEvent[]
+  savedViews      SavedView[]
+  regulatoryProfiles RegulatoryProfile[]
+  contractors     Contractor[]
+  chainsOfCustody ChainOfCustody[]
+  floorPlans      FloorPlan[]
+  signatures      Signature[]
+  reports         GeneratedReport[]
+  acknowledgements ContractorAcknowledgement[]
+  importJobs      ImportJob[]
+  notifications_pref NotificationPreference[]
+}
+
+model Role {
+  id           String   @id @default(cuid())
+  organizationId String
+  name         String
+  slug         String
+  description  String?
+  permissions  String   @default("[]")
+  isSystem     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users        User[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String
+  roleId         String
+  clientId       String?
+  contractorId   String?
+  email          String
+  passwordHash   String
+  name           String
+  title          String?
+  phone          String?
+  avatarPath     String?
+  status         String    @default("active")
+  lastLoginAt    DateTime?
+  mfaEnabled     Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+  contractor   Contractor?  @relation(fields: [contractorId], references: [id])
+
+  assignedBuildings UserBuildingAccess[]
+  inspections       Inspection[]         @relation("Inspector")
+  samplesCollected  Sample[]             @relation("SampleCollector")
+  repairsAssigned   Repair[]             @relation("RepairAssignee")
+  tasksAssigned     Task[]               @relation("TaskAssignee")
+  tasksCreated      Task[]               @relation("TaskCreator")
+  notifications     Notification[]
+  auditEvents       AuditEvent[]
+  uploadedPhotos    Photo[]              @relation("PhotoUploader")
+  capturedPhotos    Photo[]              @relation("PhotoPhotographer")
+  uploadedDocuments Document[]           @relation("DocumentUploader")
+  signatures        Signature[]
+  savedViews        SavedView[]
+  activities        ActivityEvent[]
+  sessions          Session[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model UserBuildingAccess {
+  id         String @id @default(cuid())
+  userId     String
+  buildingId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, buildingId])
+}
+
+model Client {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  clientNumber    String
+  primaryContact  String?
+  primaryEmail    String?
+  primaryPhone    String?
+  secondaryContact String?
+  secondaryEmail  String?
+  secondaryPhone  String?
+  address         String?
+  city            String?
+  state           String?
+  postalCode      String?
+  logoPath        String?
+  notes           String?
+  contractInfo    String?
+  inspectionReqs  String?
+  reportingReqs   String?
+  documentReqs    String?
+  notifyPrefs     String?
+  photoPolicy     String   @default("permitted")
+  customFields    String   @default("{}")
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  facilities   Facility[]
+  buildings    Building[]
+  users        User[]
+  inventoryItems InventoryItem[]
+  samples      Sample[]
+  inspections  Inspection[]
+  repairs      Repair[]
+  documents    Document[]
+  photos       Photo[]
+  tasks        Task[]
+  activities   ActivityEvent[]
+
+  @@unique([organizationId, clientNumber])
+  @@index([organizationId])
+}
+
+model Facility {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  clientId           String
+  name               String
+  facilityId         String
+  address            String?
+  city               String?
+  state              String?
+  postalCode         String?
+  latitude           Float?
+  longitude          Float?
+  primaryContact     String?
+  environmentalContact String?
+  emergencyContact   String?
+  notes              String?
+  photoPolicy        String?
+  status             String   @default("active")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  buildings    Building[]
+  documents    Document[]
+
+  @@unique([organizationId, facilityId])
+  @@index([organizationId, clientId])
+}
+
+model Building {
+  id                    String    @id @default(cuid())
+  organizationId        String
+  clientId              String
+  facilityId            String
+  name                  String
+  buildingNumber        String
+  address               String?
+  latitude              Float?
+  longitude             Float?
+  yearConstructed       Int?
+  squareFootage         Int?
+  floorsCount           Int?
+  buildingUse           String?
+  occupancyStatus       String    @default("occupied")
+  activeStatus          String    @default("active")
+  renovationHistory     String?
+  demolitionStatus      String    @default("none")
+  surveyStatus          String    @default("complete")
+  lastInspectionAt      DateTime?
+  nextInspectionAt      DateTime?
+  inspectionIntervalDays Int      @default(365)
+  responsibleManagerId  String?
+  managementPlanStatus  String    @default("current")
+  photoPolicy           String    @default("permitted")
+  contacts              String?
+  notes                 String?
+  qrCode                String?
+  complianceStatus      String    @default("attention")
+  complianceReasons     String    @default("[]")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  facility         Facility          @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  floors           BuildingFloor[]
+  areas            BuildingArea[]
+  homogeneousAreas HomogeneousArea[]
+  inventoryItems   InventoryItem[]
+  samples          Sample[]
+  inspections      Inspection[]
+  repairs          Repair[]
+  removals         RemovalEvent[]
+  photos           Photo[]
+  documents        Document[]
+  floorPlans       FloorPlan[]
+  tasks            Task[]
+  activities       ActivityEvent[]
+  userAccess       UserBuildingAccess[]
+  acknowledgements ContractorAcknowledgement[]
+  chainsOfCustody  ChainOfCustody[]
+  paintSamples     PaintSample[]
+  ppeRequirements  BuildingPpe[]
+
+  @@unique([organizationId, clientId, buildingNumber])
+  @@index([organizationId, facilityId])
+  @@index([nextInspectionAt])
+}
+
+model BuildingFloor {
+  id         String  @id @default(cuid())
+  buildingId String
+  name       String
+  level      Int
+  notes      String?
+  qrCode     String?
+  squareFootage Int?
+  occupancy  String?
+  building   Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  areas      BuildingArea[]
+  floorPlans FloorPlan[]
+  paintSamples PaintSample[]
+
+  @@index([buildingId])
+}
+
+model BuildingArea {
+  id         String  @id @default(cuid())
+  buildingId String
+  floorId    String?
+  faCode     String?
+  name       String
+  areaType   String?
+  useDescription String?
+  qrCode     String?
+  notes      String?
+  building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor      BuildingFloor? @relation(fields: [floorId], references: [id])
+  paintSamples PaintSample[]
+
+  @@index([buildingId])
+}
+
+model PaintSample {
+  id             String   @id @default(cuid())
+  organizationId String
+  buildingId     String
+  floorId        String?
+  areaId         String?
+  sampleNumber   String
+  floor          String?
+  room           String?
+  location       String?
+  component      String?
+  color          String?
+  substrate      String?
+  collectionDate DateTime @default(now())
+  laboratory     String?
+  method         String?
+  leadDetected   Boolean?
+  leadPpm        Float?
+  leadMgCm2      Float?
+  asbestosPaint  Boolean?
+  resultSummary  String?
+  status         String   @default("collected")
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  building Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floorRec BuildingFloor? @relation(fields: [floorId], references: [id])
+  area     BuildingArea?  @relation(fields: [areaId], references: [id])
+
+  @@unique([buildingId, sampleNumber])
+  @@index([buildingId])
+}
+
+model BuildingPpe {
+  id          String  @id @default(cuid())
+  buildingId  String
+  item        String
+  required    Boolean @default(true)
+  appliesTo   String?
+  notes       String?
+  building    Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([buildingId])
+}
+
+model HomogeneousArea {
+  id              String   @id @default(cuid())
+  organizationId  String
+  buildingId      String
+  haCode          String
+  material        String
+  materialDescription String?
+  floors          String?
+  rooms           String?
+  determination   String   @default("unknown")
+  quantity        Float?
+  quantityUnit    String?
+  condition       String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  building       Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inventoryItems InventoryItem[]
+  samples        Sample[]
+
+  @@unique([buildingId, haCode])
+  @@index([buildingId])
+}
+
+model InventoryItem {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  clientId             String
+  facilityId           String
+  buildingId           String
+  homogeneousAreaId    String?
+  inventoryCode        String
+  internalCode         String?
+  floor                String?
+  room                 String?
+  area                 String?
+  specificLocation     String?
+  materialCategory     String
+  materialDescription  String
+  acmClassification    String
+  asbestosDetected     Boolean?
+  fiberTypes           String   @default("[]")
+  asbestosPercent      Float?
+  friable              String?
+  materialClass        String?
+  categoryIorII        String?
+  analyticalMethod     String?
+  originalQuantity     Float?
+  currentQuantity      Float?
+  quantityRepaired     Float    @default(0)
+  quantityRemoved      Float    @default(0)
+  quantityUnit         String
+  quantityUncertainty  String?
+  quantitySource       String?
+  quantityNotes        String?
+  condition            String
+  accessibility        String?
+  disturbancePotential String?
+  labelPresent         Boolean?
+  labelCondition       String?
+  responseAction       String?
+  isProvisional        Boolean  @default(false)
+  recordStatus         String   @default("active")
+  latitude             Float?
+  longitude            Float?
+  floorPlanX           Float?
+  floorPlanY           Float?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client       @relation(fields: [clientId], references: [id])
+  building         Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  homogeneousArea  HomogeneousArea? @relation(fields: [homogeneousAreaId], references: [id])
+  quantityHistory  InventoryQuantityHistory[]
+  conditionHistory InventoryConditionHistory[]
+  labelHistory     InventoryLabelHistory[]
+  sampleLinks      SampleInventoryLink[]
+  inspectionItems  InspectionItem[]
+  repairs          Repair[]
+  removals         RemovalEvent[]
+  photoLinks       PhotoLink[]
+  documents        Document[]
+  tasks            Task[]
+  activities       ActivityEvent[]
+  discoveries      SuspectMaterial[]
+
+  @@unique([organizationId, inventoryCode])
+  @@index([organizationId, buildingId])
+  @@index([acmClassification])
+  @@index([condition])
+  @@index([recordStatus])
+}
+
+model InventoryQuantityHistory {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  previousQty     Float?
+  newQty          Float
+  delta           Float?
+  unit            String
+  reason          String
+  sourceType      String?
+  sourceId        String?
+  notes           String?
+  changedById     String?
+  changedAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+}
+
+model InventoryConditionHistory {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  previousCondition String?
+  newCondition    String
+  inspectionId    String?
+  inspectorId     String?
+  notes           String?
+  changedAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+}
+
+model InventoryLabelHistory {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  labelPresent    Boolean?
+  labelCondition  String?
+  labelReplaced   Boolean  @default(false)
+  labelMissing    Boolean  @default(false)
+  unableToReplace Boolean  @default(false)
+  notes           String?
+  inspectionId    String?
+  changedById     String?
+  changedAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+}
+
+model Laboratory {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  accreditation  String?
+  address        String?
+  phone          String?
+  email          String?
+  notes          String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  samples        Sample[]
+  chains         ChainOfCustody[]
+}
+
+model Sample {
+  id                   String    @id @default(cuid())
+  organizationId       String
+  clientId             String
+  buildingId           String
+  homogeneousAreaId    String?
+  sampleNumber         String
+  clientSampleNumber   String?
+  floor                String?
+  room                 String?
+  location             String?
+  material             String
+  materialDescription  String?
+  collectionDate       DateTime
+  collectionTime       String?
+  inspectorId          String?
+  samplingMethod       String?
+  notes                String?
+  laboratoryId         String?
+  labSampleNumber      String?
+  analysisMethod       String?
+  dateReceived         DateTime?
+  dateAnalyzed         DateTime?
+  dateResultsReceived  DateTime?
+  status               String    @default("collected")
+  cocId                String?
+  latitude             Float?
+  longitude            Float?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client          Client           @relation(fields: [clientId], references: [id])
+  building        Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  homogeneousArea HomogeneousArea? @relation(fields: [homogeneousAreaId], references: [id])
+  inspector       User?            @relation("SampleCollector", fields: [inspectorId], references: [id])
+  laboratory      Laboratory?      @relation(fields: [laboratoryId], references: [id])
+  chainOfCustody  ChainOfCustody?  @relation(fields: [cocId], references: [id])
+  layers          SampleLayer[]
+  inventoryLinks  SampleInventoryLink[]
+  photoLinks      PhotoLink[]
+  documents       Document[]
+  activities      ActivityEvent[]
+
+  @@unique([organizationId, sampleNumber])
+  @@index([organizationId, buildingId])
+  @@index([status])
+}
+
+model SampleLayer {
+  id              String  @id @default(cuid())
+  sampleId        String
+  layerNumber     Int
+  description     String
+  asbestosDetected Boolean?
+  asbestosPercent Float?
+  fiberTypes      String  @default("[]")
+  classification  String?
+  comments        String?
+  detectionLimit  String?
+  sample          Sample  @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  result          SampleResult?
+
+  @@unique([sampleId, layerNumber])
+}
+
+model SampleResult {
+  id               String    @id @default(cuid())
+  sampleLayerId    String    @unique
+  asbestosDetected Boolean
+  asbestosPercent  Float?
+  fiberTypes       String    @default("[]")
+  method           String
+  detectionLimit   String?
+  analystComments  String?
+  labComments      String?
+  reviewed         Boolean   @default(false)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  conflicting      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+
+  layer SampleLayer @relation(fields: [sampleLayerId], references: [id], onDelete: Cascade)
+}
+
+model SampleInventoryLink {
+  id              String   @id @default(cuid())
+  sampleId        String
+  inventoryItemId String
+  layerNumber     Int?
+  linkType        String   @default("supporting")
+  createdAt       DateTime @default(now())
+
+  sample        Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, inventoryItemId, layerNumber])
+}
+
+model ChainOfCustody {
+  id             String    @id @default(cuid())
+  organizationId String
+  buildingId     String?
+  projectName    String?
+  inspectorId    String?
+  laboratoryId   String?
+  analysisRequested String?
+  relinquishedBy String?
+  relinquishedAt DateTime?
+  receivedBy     String?
+  receivedAt     DateTime?
+  shippingMethod String?
+  trackingNumber String?
+  status         String    @default("draft")
+  notes          String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building     Building?    @relation(fields: [buildingId], references: [id])
+  laboratory   Laboratory?  @relation(fields: [laboratoryId], references: [id])
+  samples      Sample[]
+}
+
+model Inspection {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  buildingId     String
+  inspectionType String
+  templateName   String?
+  scheduledDate  DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  inspectorId    String?
+  status         String    @default("scheduled")
+  previousInspectionId String?
+  completionPct  Int       @default(0)
+  notes          String?
+  findings       String?
+  signedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client           @relation(fields: [clientId], references: [id])
+  building     Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inspector    User?            @relation("Inspector", fields: [inspectorId], references: [id])
+  items        InspectionItem[]
+  discoveries  SuspectMaterial[]
+  signatures   Signature[]
+  photoLinks   PhotoLink[]
+  documents    Document[]
+  activities   ActivityEvent[]
+  tasks        Task[]
+
+  @@index([organizationId, buildingId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+model InspectionItem {
+  id                String    @id @default(cuid())
+  inspectionId      String
+  inventoryItemId   String
+  previousCondition String?
+  currentCondition  String?
+  previousLabel     String?
+  currentLabel      String?
+  quantityObserved  Float?
+  materialRemoved   Boolean   @default(false)
+  removedQuantity   Float?
+  notes             String?
+  inspected         Boolean   @default(false)
+  inspectedAt       DateTime?
+  photoRequired     Boolean   @default(false)
+  photosSatisfied   Boolean   @default(false)
+
+  inspection    Inspection    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([inspectionId, inventoryItemId])
+  @@index([inspectionId])
+}
+
+model SuspectMaterial {
+  id              String   @id @default(cuid())
+  inspectionId    String?
+  buildingId      String
+  inventoryItemId String?
+  floor           String?
+  room            String?
+  location        String?
+  material        String
+  estimatedQty    Float?
+  unit            String?
+  condition       String?
+  friability      String?
+  action          String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+}
+
+model Repair {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  clientId           String
+  buildingId         String
+  inventoryItemId    String
+  repairCode         String
+  problem            String
+  condition          String?
+  identifiedAt       DateTime  @default(now())
+  inspectorId        String?
+  priority           String    @default("medium")
+  recommendedResponse String?
+  assignedContractorId String?
+  assignedUserId     String?
+  workOrderNumber    String?
+  poNumber           String?
+  estimatedCost      Float?
+  scheduledDate      DateTime?
+  completionDate     DateTime?
+  completionNotes    String?
+  status             String    @default("open")
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id])
+  building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  assignedUser User?        @relation("RepairAssignee", fields: [assignedUserId], references: [id])
+  contractor   Contractor?  @relation(fields: [assignedContractorId], references: [id])
+  verification RepairVerification?
+  photoLinks   PhotoLink[]
+  documents    Document[]
+  activities   ActivityEvent[]
+  tasks        Task[]
+
+  @@unique([organizationId, repairCode])
+  @@index([organizationId, buildingId])
+  @@index([status])
+}
+
+model RepairVerification {
+  id              String   @id @default(cuid())
+  repairId        String   @unique
+  verificationDate DateTime @default(now())
+  inspectorId     String?
+  satisfactory    Boolean
+  updatedCondition String?
+  updatedQuantity Float?
+  labelStatus     String?
+  notes           String?
+  followUpRequired Boolean @default(false)
+
+  repair Repair @relation(fields: [repairId], references: [id], onDelete: Cascade)
+}
+
+model RemovalEvent {
+  id                String   @id @default(cuid())
+  organizationId    String
+  buildingId        String
+  inventoryItemId   String
+  quantityBefore    Float
+  quantityRemoved   Float
+  quantityRemaining Float
+  unit              String
+  removedAt         DateTime
+  contractorId      String?
+  projectNumber     String?
+  workOrder         String?
+  notificationNumber String?
+  wasteShipment     String?
+  disposalFacility  String?
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building      Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  contractor    Contractor?   @relation(fields: [contractorId], references: [id])
+  photoLinks    PhotoLink[]
+  documents     Document[]
+  activities    ActivityEvent[]
+
+  @@index([organizationId, buildingId])
+}
+
+model Contractor {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  license        String?
+  contactName    String?
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User[]
+  repairs        Repair[]
+  removals       RemovalEvent[]
+  acknowledgements ContractorAcknowledgement[]
+}
+
+model ContractorAcknowledgement {
+  id             String   @id @default(cuid())
+  organizationId String
+  contractorId   String
+  buildingId     String
+  employeeName   String
+  acknowledgedAt DateTime @default(now())
+  inventoryProvided Boolean @default(true)
+  documentsProvided String?
+  signatureId    String?
+  expiresAt      DateTime?
+  notes          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractor   Contractor   @relation(fields: [contractorId], references: [id])
+  building     Building     @relation(fields: [buildingId], references: [id])
+}
+
+model Photo {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String?
+  buildingId     String?
+  storageKey     String
+  originalFilename String
+  mimeType       String
+  size           Int
+  width          Int?
+  height         Int?
+  capturedAt     DateTime?
+  uploadedAt     DateTime  @default(now())
+  uploadedById   String?
+  photographerId String?
+  latitude       Float?
+  longitude      Float?
+  visibility     String    @default("internal")
+  exifJson       String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id])
+  building     Building?    @relation(fields: [buildingId], references: [id])
+  uploader     User?        @relation("PhotoUploader", fields: [uploadedById], references: [id])
+  photographer User?        @relation("PhotoPhotographer", fields: [photographerId], references: [id])
+  links        PhotoLink[]
+  annotations  PhotoAnnotation[]
+}
+
+model PhotoLink {
+  id           String  @id @default(cuid())
+  photoId      String
+  recordType   String
+  recordId     String
+  category     String
+  caption      String?
+  notes        String?
+  primaryPhoto Boolean @default(false)
+  visibility   String  @default("inherit")
+  inventoryItemId String?
+  inspectionId String?
+  repairId     String?
+  removalId    String?
+  sampleId     String?
+
+  photo         Photo          @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
+  repair        Repair?        @relation(fields: [repairId], references: [id])
+  removal       RemovalEvent?  @relation(fields: [removalId], references: [id])
+  sample        Sample?        @relation(fields: [sampleId], references: [id])
+
+  @@index([recordType, recordId])
+  @@index([photoId])
+}
+
+model PhotoAnnotation {
+  id             String   @id @default(cuid())
+  photoId        String
+  annotationData String
+  createdById    String?
+  createdAt      DateTime @default(now())
+  photo          Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String?
+  buildingId     String?
+  inventoryItemId String?
+  sampleId       String?
+  inspectionId   String?
+  repairId       String?
+  removalId      String?
+  name           String
+  docType        String
+  storageKey     String
+  originalFilename String
+  mimeType       String
+  size           Int
+  documentDate   DateTime?
+  description    String?
+  revision       Int       @default(0)
+  visibility     String    @default("internal")
+  uploadedById   String?
+  uploadedAt     DateTime  @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client        Client?        @relation(fields: [clientId], references: [id])
+  building      Building?      @relation(fields: [buildingId], references: [id])
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  sample        Sample?        @relation(fields: [sampleId], references: [id])
+  inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
+  repair        Repair?        @relation(fields: [repairId], references: [id])
+  removal       RemovalEvent?  @relation(fields: [removalId], references: [id])
+  uploader      User?          @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  facility      Facility?      @relation(fields: [facilityId], references: [id])
+  facilityId    String?
+
+  @@index([organizationId, buildingId])
+  @@index([docType])
+}
+
+model FloorPlan {
+  id             String  @id @default(cuid())
+  organizationId String
+  buildingId     String
+  floorId        String?
+  name           String
+  storageKey     String
+  mimeType       String
+  originalFilename String
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor        BuildingFloor? @relation(fields: [floorId], references: [id])
+  markers      FloorPlanMarker[]
+}
+
+model FloorPlanMarker {
+  id            String  @id @default(cuid())
+  floorPlanId   String
+  recordType    String
+  recordId      String
+  markerType    String  @default("pin")
+  x             Float
+  y             Float
+  label         String?
+  geometryJson  String?
+  floorPlan     FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String?
+  buildingId     String?
+  inventoryItemId String?
+  sampleId       String?
+  inspectionId   String?
+  repairId       String?
+  title          String
+  description    String?
+  assignedToId   String?
+  createdById    String?
+  dueDate        DateTime?
+  priority       String    @default("medium")
+  status         String    @default("open")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client        Client?        @relation(fields: [clientId], references: [id])
+  building      Building?      @relation(fields: [buildingId], references: [id])
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
+  repair        Repair?        @relation(fields: [repairId], references: [id])
+  assignedTo    User?          @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy     User?          @relation("TaskCreator", fields: [createdById], references: [id])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  type           String
+  title          String
+  body           String
+  href           String?
+  read           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model NotificationPreference {
+  id             String  @id @default(cuid())
+  organizationId String
+  eventType      String
+  inApp          Boolean @default(true)
+  email          Boolean @default(true)
+  sms            Boolean @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Signature {
+  id             String   @id @default(cuid())
+  organizationId String
+  inspectionId   String?
+  signerName     String
+  signerRole     String?
+  signatureData  String
+  signedAt       DateTime @default(now())
+  meaning        String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inspection   Inspection?  @relation(fields: [inspectionId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+  userId       String?
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  recordType     String
+  recordId       String
+  previousValue  String?
+  newValue       String?
+  relatedInspectionId String?
+  relatedDocumentId   String?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, recordType, recordId])
+  @@index([createdAt])
+}
+
+model ActivityEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String?
+  buildingId     String?
+  inventoryItemId String?
+  sampleId       String?
+  inspectionId   String?
+  repairId       String?
+  removalId      String?
+  actorId        String?
+  eventType      String
+  title          String
+  detail         String?
+  createdAt      DateTime @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client        Client?        @relation(fields: [clientId], references: [id])
+  building      Building?      @relation(fields: [buildingId], references: [id])
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  sample        Sample?        @relation(fields: [sampleId], references: [id])
+  inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
+  repair        Repair?        @relation(fields: [repairId], references: [id])
+  removal       RemovalEvent?  @relation(fields: [removalId], references: [id])
+  actor         User?          @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId, buildingId, createdAt])
+}
+
+model SavedView {
+  id             String  @id @default(cuid())
+  organizationId String
+  userId         String?
+  name           String
+  entity         String
+  filters        String
+  shared         Boolean @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id])
+}
+
+model RegulatoryProfile {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  jurisdiction   String?
+  config         String  @default("{}")
+  isDefault      Boolean @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model GeneratedReport {
+  id             String   @id @default(cuid())
+  organizationId String
+  reportType     String
+  title          String
+  revision       Int      @default(0)
+  storageKey     String?
+  params         String   @default("{}")
+  generatedAt    DateTime @default(now())
+  generatedById  String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ImportJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  kind           String
+  status         String   @default("preview")
+  filename       String?
+  mapping        String?
+  summary        String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
