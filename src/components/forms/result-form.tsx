@@ -18,8 +18,9 @@ export function ResultForm({ sampleId }: { sampleId: string }) {
             sampleId,
             layerNumber: Number(fd.get("layerNumber") || 1),
             asbestosDetected: fd.get("detected") === "yes",
-            asbestosPercent: fd.get("pct") ? Number(fd.get("pct")) : undefined,
-            fiberTypes: String(fd.get("fibers") || "").split(",").map((s) => s.trim()).filter(Boolean),
+            asbestosPercent: fd.get("pct") && !String(fd.get("pct")).startsWith("<") ? Number(fd.get("pct")) : undefined,
+            detectionLimit: String(fd.get("pct") || "").startsWith("<") ? String(fd.get("pct")) : undefined,
+            fiberTypes: fd.getAll("fibers").map(String),
             method: String(fd.get("method") || "PLM"),
             comments: String(fd.get("comments") || ""),
           });
@@ -32,8 +33,8 @@ export function ResultForm({ sampleId }: { sampleId: string }) {
         <label>Detected</label>
         <select name="detected"><option value="yes">Asbestos detected</option><option value="no">Not detected</option></select>
       </div>
-      <div className="field"><label>Percent</label><input name="pct" type="number" step="0.1" /></div>
-      <div className="field"><label>Fiber types</label><input name="fibers" placeholder="Chrysotile, Amosite" /></div>
+      <div className="field"><label>Percent / reporting limit</label><input name="pct" inputMode="decimal" placeholder="1 or <1%" /></div>
+      <div className="field md:col-span-2"><label>Asbestos type(s)</label><div className="flex flex-wrap gap-3 rounded-lg border border-[rgba(16,36,72,0.12)] p-2 text-sm">{["Chrysotile", "Amosite", "Crocidolite", "Tremolite", "Actinolite", "Anthophyllite"].map((fiber) => <label key={fiber} className="flex items-center gap-1.5"><input name="fibers" type="checkbox" value={fiber} />{fiber}</label>)}</div></div>
       <div className="field">
         <label>Method</label>
         <select name="method">

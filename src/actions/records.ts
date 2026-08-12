@@ -255,6 +255,7 @@ export async function saveSample(form: FormData) {
   const id = str(form, "id");
   const buildingId = str(form, "buildingId");
   const data = {
+    sampleNumber: str(form, "sampleNumber"),
     material: str(form, "material"),
     floor: str(form, "floor") || null,
     room: str(form, "room") || null,
@@ -262,6 +263,7 @@ export async function saveSample(form: FormData) {
     status: str(form, "status") || "collected",
     notes: str(form, "notes") || null,
   };
+  if (!data.sampleNumber || !data.material) throw new Error("Sample number and material are required");
   if (id) {
     const sample = await db.sample.findFirst({ where: { id, organizationId: user.organizationId } });
     if (!sample) throw new Error("Sample not found");
@@ -283,7 +285,7 @@ export async function saveSample(form: FormData) {
       organizationId: user.organizationId,
       clientId: building.clientId,
       buildingId,
-      sampleNumber: `26-${String(n).padStart(3, "0")}`,
+      sampleNumber: data.sampleNumber || `26-${String(n).padStart(3, "0")}`,
       collectionDate: new Date(),
       inspectorId: user.id,
     },
@@ -396,6 +398,7 @@ export async function savePaintSample(form: FormData) {
   const id = str(form, "id");
   const lead = str(form, "leadDetected");
   const data = {
+    sampleNumber: str(form, "sampleNumber"),
     floorId: str(form, "floorId") || null,
     areaId: str(form, "areaId") || null,
     floor: str(form, "floor") || null,
@@ -410,11 +413,16 @@ export async function savePaintSample(form: FormData) {
     leadPpm: num(form, "leadPpm"),
     leadMgCm2: num(form, "leadMgCm2"),
     asbestosPaint: str(form, "asbestosPaint") === "yes" ? true : str(form, "asbestosPaint") === "no" ? false : null,
-    resultSummary: str(form, "resultSummary") || null,
+    resultSummary: [
+      str(form, "analyte") === "Other" ? str(form, "otherAnalyte") : str(form, "analyte"),
+      str(form, "concentration") ? `${str(form, "concentration")} ${str(form, "concentrationUnit")}` : "",
+      str(form, "resultSummary"),
+    ].filter(Boolean).join(" · ") || null,
     status: str(form, "status") || "results_received",
     notes: str(form, "notes") || null,
     collectionDate: dateOrNull(form, "collectionDate") ?? new Date(),
   };
+  if (!data.sampleNumber) throw new Error("Paint sample number is required");
   if (id) {
     await db.paintSample.update({ where: { id }, data });
   } else {
@@ -425,7 +433,7 @@ export async function savePaintSample(form: FormData) {
         ...data,
         organizationId: user.organizationId,
         buildingId,
-        sampleNumber: `PB-${String(n).padStart(3, "0")}`,
+        sampleNumber: data.sampleNumber || `PB-${String(n).padStart(3, "0")}`,
       },
     });
   }

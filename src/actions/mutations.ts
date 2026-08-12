@@ -263,6 +263,7 @@ export async function enterSampleResult(input: {
   layerNumber: number;
   asbestosDetected: boolean;
   asbestosPercent?: number;
+  detectionLimit?: string;
   fiberTypes: string[];
   method: string;
   comments?: string;
@@ -291,6 +292,7 @@ export async function enterSampleResult(input: {
       fiberTypes: JSON.stringify(input.fiberTypes),
       classification: input.asbestosDetected ? "confirmed_acm" : "non_acm",
       comments: input.comments,
+      detectionLimit: input.detectionLimit,
     },
   });
   await db.sampleResult.upsert({
@@ -301,6 +303,7 @@ export async function enterSampleResult(input: {
       asbestosPercent: input.asbestosPercent,
       fiberTypes: JSON.stringify(input.fiberTypes),
       method: input.method,
+      detectionLimit: input.detectionLimit,
       labComments: input.comments,
     },
     update: {
@@ -308,6 +311,7 @@ export async function enterSampleResult(input: {
       asbestosPercent: input.asbestosPercent,
       fiberTypes: JSON.stringify(input.fiberTypes),
       method: input.method,
+      detectionLimit: input.detectionLimit,
       labComments: input.comments,
     },
   });

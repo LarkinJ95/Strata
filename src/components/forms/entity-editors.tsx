@@ -310,7 +310,7 @@ export function SampleEditor({
   sample,
 }: {
   buildingId: string;
-  sample?: { id: string; material: string; floor: string | null; room: string | null; location: string | null; status: string; notes: string | null };
+  sample?: { id: string; sampleNumber: string; material: string; floor: string | null; room: string | null; location: string | null; status: string; notes: string | null };
 }) {
   return (
     <Disclose label={sample ? `Edit sample ${sample.material}` : "Add sample"}>
@@ -319,6 +319,7 @@ export function SampleEditor({
         {sample && <input type="hidden" name="id" value={sample.id} />}
         <input type="hidden" name="buildingId" value={buildingId} />
         <Grid>
+          <Field label="Sample number"><input name="sampleNumber" defaultValue={sample?.sampleNumber ?? ""} placeholder="26-001" required /></Field>
           <Field label="Material"><input name="material" defaultValue={sample?.material ?? ""} required /></Field>
           <Field label="Floor"><input name="floor" defaultValue={sample?.floor ?? ""} /></Field>
           <Field label="Room"><input name="room" defaultValue={sample?.room ?? ""} /></Field>
@@ -475,6 +476,7 @@ export function PaintSampleEditor({
   areas: { id: string; name: string; faCode: string | null }[];
   sample?: {
     id: string;
+    sampleNumber: string;
     floorId: string | null;
     areaId: string | null;
     floor: string | null;
@@ -502,6 +504,7 @@ export function PaintSampleEditor({
         <input type="hidden" name="buildingId" value={buildingId} />
         {sample && <input type="hidden" name="id" value={sample.id} />}
         <Grid>
+          <Field label="Sample number"><input name="sampleNumber" defaultValue={sample?.sampleNumber ?? ""} placeholder="PB-001" required /></Field>
           <Field label="Floor record">
             <select name="floorId" defaultValue={sample?.floorId ?? ""}>
               <option value="">—</option>
@@ -542,6 +545,10 @@ export function PaintSampleEditor({
           </Field>
           <Field label="Lead ppm"><input name="leadPpm" type="number" step="0.1" defaultValue={sample?.leadPpm ?? ""} /></Field>
           <Field label="Lead mg/cm²"><input name="leadMgCm2" type="number" step="0.01" defaultValue={sample?.leadMgCm2 ?? ""} /></Field>
+          <Field label="Analyte"><select name="analyte" defaultValue="Lead"><option>Lead</option><option>Cadmium</option><option>Chromium</option><option>Mercury</option><option>Arsenic</option><option>Other</option></select></Field>
+          <Field label="Other analyte"><input name="otherAnalyte" placeholder="Specify if Other" /></Field>
+          <Field label="Concentration"><input name="concentration" inputMode="decimal" placeholder="Value or < limit" /></Field>
+          <Field label="Concentration unit"><select name="concentrationUnit" defaultValue="mg/m³"><option>mg/m³</option><option>μg/m³</option><option>mg/cm²</option><option>μg/cm²</option><option>ppm</option><option>% by weight</option><option>mg/kg</option><option>μg/g</option></select></Field>
           <Field label="Asbestos in paint">
             <select name="asbestosPaint" defaultValue={sample?.asbestosPaint == null ? "" : sample.asbestosPaint ? "yes" : "no"}>
               <option value="">Not analyzed</option>
