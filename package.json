@@ -13,6 +13,7 @@
     "db:migrate:local": "wrangler d1 migrations apply strata --local",
     "db:migrate:remote": "wrangler d1 migrations apply strata --remote",
     "db:bootstrap:production": "tsx scripts/bootstrap-production.ts",
+    "db:import:production-workbook": "tsx scripts/import-production-workbook.ts",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "db:generate": "prisma generate",
