@@ -47,13 +47,19 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             <SectionTitle action={!user.isClient ? <FacilityEditor clientId={client.id} facility={f} /> : undefined}>{f.name} · {f.facilityId}</SectionTitle>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {f.buildings.map((b) => (
-                <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
-                  <div className="flex items-center justify-between">
-                    <div className="truncate text-sm font-medium">{b.buildingNumber} Building</div>
-                    <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
-                  </div>
-                  {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
-                </Link>
+                (() => {
+                  const prefix = `${f.facilityId}-`;
+                  const shortNumber = b.buildingNumber.toUpperCase().startsWith(prefix.toUpperCase())
+                    ? b.buildingNumber.slice(prefix.length)
+                    : b.buildingNumber;
+                  return <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
+                    <div className="flex items-center justify-between">
+                      <div className="truncate text-sm font-medium">{shortNumber} Building</div>
+                      <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
+                    </div>
+                    {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
+                  </Link>;
+                })()
               ))}
             </div>
             {!user.isClient && (
