@@ -11,6 +11,7 @@ out/
 .wrangler/
 .open-next/
 *.log
+*.tsbuildinfo
 
 # OS metadata
 .DS_Store
