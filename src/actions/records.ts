@@ -268,6 +268,14 @@ export async function saveSample(form: FormData) {
     status: str(form, "status") || "collected",
     notes: str(form, "notes") || null,
   };
+  const resultDetected = str(form, "resultDetected");
+  const reportedPercent = str(form, "reportedPercent");
+  const asbestosPercent = reportedPercent && !reportedPercent.startsWith("<") ? Number(reportedPercent) : null;
+  const detectionLimit = reportedPercent.startsWith("<") ? reportedPercent : null;
+  const fiberTypes = form.getAll("fiberTypes").map(String).filter(Boolean);
+  const analysisMethod = str(form, "analysisMethod") || "PLM";
+  const resultComments = str(form, "resultComments") || null;
+  if (asbestosPercent != null && !Number.isFinite(asbestosPercent)) throw new Error("Asbestos percent must be a number or a reporting limit such as <1%");
   if (!data.sampleNumber || !data.material) throw new Error("Sample number and material are required");
   if (id) {
     const sample = await db.sample.findFirst({ where: { id, organizationId: user.organizationId } });
@@ -293,9 +301,36 @@ export async function saveSample(form: FormData) {
       sampleNumber: data.sampleNumber || `26-${String(n).padStart(3, "0")}`,
       collectionDate: new Date(),
       inspectorId: user.id,
+      analysisMethod: resultDetected ? analysisMethod : null,
+      status: resultDetected ? "results_received" : data.status,
     },
   });
-  await db.sampleLayer.create({ data: { sampleId: created.id, layerNumber: 1, description: data.material || "Layer 1" } });
+  const layer = await db.sampleLayer.create({
+    data: {
+      sampleId: created.id,
+      layerNumber: 1,
+      description: data.material || "Layer 1",
+      asbestosDetected: resultDetected ? resultDetected === "yes" : null,
+      asbestosPercent,
+      fiberTypes: JSON.stringify(fiberTypes),
+      classification: resultDetected ? (resultDetected === "yes" ? "confirmed_acm" : "non_acm") : null,
+      detectionLimit,
+      comments: resultComments,
+    },
+  });
+  if (resultDetected) {
+    await db.sampleResult.create({
+      data: {
+        sampleLayerId: layer.id,
+        asbestosDetected: resultDetected === "yes",
+        asbestosPercent,
+        fiberTypes: JSON.stringify(fiberTypes),
+        method: analysisMethod,
+        detectionLimit,
+        labComments: resultComments,
+      },
+    });
+  }
   revalidatePath(`/buildings/${buildingId}`);
 }
 

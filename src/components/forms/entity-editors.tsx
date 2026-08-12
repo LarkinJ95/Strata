@@ -350,6 +350,28 @@ export function SampleEditor({
             </select>
           </Field>
         </Grid>
+        {!sample && (
+          <div className="rounded-xl border border-[rgba(16,104,108,0.18)] bg-[rgba(16,104,108,0.035)] p-3">
+            <div className="mb-3 text-sm font-semibold text-teal-dim">Laboratory result (optional at collection)</div>
+            <Grid>
+              <Field label="Asbestos result">
+                <select name="resultDetected" defaultValue="">
+                  <option value="">Not entered yet</option>
+                  <option value="yes">Asbestos detected</option>
+                  <option value="no">Not detected</option>
+                </select>
+              </Field>
+              <Field label="Percent / reporting limit"><input name="reportedPercent" inputMode="decimal" placeholder="1, 0.5, or <1%" /></Field>
+              <Field label="Method">
+                <select name="analysisMethod" defaultValue="PLM">
+                  {['PLM', 'PLM Point Count', 'TEM', 'Gravimetric Reduction', 'Chatfield'].map((method) => <option key={method}>{method}</option>)}
+                </select>
+              </Field>
+              <Field label="Lab comments"><input name="resultComments" placeholder="Optional" /></Field>
+            </Grid>
+            <div className="mt-3 field"><label>Asbestos type(s)</label><div className="flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-[rgba(16,36,72,0.12)] bg-white p-2 text-sm">{['Chrysotile', 'Amosite', 'Crocidolite', 'Tremolite', 'Actinolite', 'Anthophyllite'].map((fiber) => <label key={fiber} className="flex items-center gap-1.5"><input name="fiberTypes" type="checkbox" value={fiber} />{fiber}</label>)}</div></div>
+          </div>
+        )}
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={sample?.notes ?? ""} /></Field>
         <button className="btn btn-primary">{sample ? "Save sample" : "Add sample"}</button>
       </form>
