@@ -260,22 +260,47 @@ export default async function BuildingPage({
         {tab === "inventory" && (
           <div className="space-y-3">
             {!user.isClient && <InventoryEditor buildingId={building.id} />}
-            {items.map((it) => (
-              <Panel key={it.id} className="p-4">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <Link href={`/inventory/${it.id}`} className="mono-id text-teal-dim">{it.inventoryCode}</Link>
-                    <div className="font-medium">{it.materialDescription}</div>
-                    <div className="text-xs text-ink-3">{it.floor} · {it.room} · {it.specificLocation}</div>
-                  </div>
-                  <div className="flex gap-1">
-                    <AcmChip value={it.acmClassification} />
-                    <ConditionChip value={it.condition} />
-                  </div>
+            {items.length ? (
+              <Panel className="overflow-hidden p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead className="border-b border-[rgba(16,36,72,0.1)] bg-[rgba(16,36,72,0.025)] text-xs uppercase tracking-[0.08em] text-ink-3">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Item #</th>
+                        <th className="px-4 py-3 font-medium">Material & location</th>
+                        <th className="px-4 py-3 font-medium">Classification</th>
+                        <th className="px-4 py-3 font-medium">Condition</th>
+                        <th className="px-4 py-3 text-right font-medium">Current quantity</th>
+                        {!user.isClient && <th className="px-4 py-3 text-right font-medium">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[rgba(16,36,72,0.08)]">
+                      {items.map((it) => {
+                        const location = [it.floor, it.room, it.area, it.specificLocation].filter(Boolean).join(" · ");
+                        return (
+                          <tr key={it.id} className="align-top transition-colors hover:bg-[rgba(16,104,108,0.035)]">
+                            <td className="px-4 py-3">
+                              <Link href={`/inventory/${it.id}`} className="mono-id font-medium text-teal-dim">{it.inventoryCode}</Link>
+                              {it.internalCode && <div className="mt-1 text-[11px] text-ink-3">{it.internalCode}</div>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Link href={`/inventory/${it.id}`} className="font-medium text-ink hover:text-teal-dim">{it.materialDescription}</Link>
+                              <div className="mt-1 text-xs text-ink-3">{location || "Location not specified"}</div>
+                            </td>
+                            <td className="px-4 py-3"><AcmChip value={it.acmClassification} /></td>
+                            <td className="px-4 py-3"><ConditionChip value={it.condition} /></td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap text-ink-2">
+                              {formatNumber(it.currentQuantity)} {it.quantityUnit}
+                            </td>
+                            {!user.isClient && <td className="px-4 py-2 text-right"><InventoryEditor buildingId={building.id} item={it} /></td>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                {!user.isClient && <InventoryEditor buildingId={building.id} item={it} />}
               </Panel>
-            ))}
+            ) : <p className="text-sm text-ink-3">No inventory materials have been recorded for this building.</p>}
           </div>
         )}
 
