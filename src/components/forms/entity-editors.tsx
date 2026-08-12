@@ -198,19 +198,31 @@ export function InventoryEditor({
   buildingId: string;
   item?: {
     id: string;
+    inventoryCode: string;
+    internalCode: string | null;
     materialDescription: string;
     materialCategory: string;
     floor: string | null;
     room: string | null;
+    area: string | null;
     specificLocation: string | null;
     acmClassification: string;
     condition: string;
     currentQuantity: number | null;
+    originalQuantity: number | null;
     quantityUnit: string;
     asbestosPercent: number | null;
+    asbestosDetected: boolean | null;
+    fiberTypes: string;
     labelCondition: string | null;
+    labelPresent: boolean | null;
     responseAction: string | null;
     friable: string | null;
+    materialClass: string | null;
+    categoryIorII: string | null;
+    analyticalMethod: string | null;
+    accessibility: string | null;
+    disturbancePotential: string | null;
     notes: string | null;
     recordStatus: string;
   };
@@ -222,6 +234,8 @@ export function InventoryEditor({
         {item && <input type="hidden" name="id" value={item.id} />}
         <input type="hidden" name="buildingId" value={buildingId} />
         <Grid>
+          {item && <Field label="Item number"><input name="inventoryCode" defaultValue={item.inventoryCode} required /></Field>}
+          <Field label="Internal item #"><input name="internalCode" defaultValue={item?.internalCode ?? ""} /></Field>
           <Field label="Material"><input name="materialDescription" defaultValue={item?.materialDescription ?? ""} required /></Field>
           <Field label="Category">
             <select name="materialCategory" defaultValue={item?.materialCategory ?? "Miscellaneous"}>
@@ -232,6 +246,7 @@ export function InventoryEditor({
           </Field>
           <Field label="Floor"><input name="floor" defaultValue={item?.floor ?? ""} /></Field>
           <Field label="Room"><input name="room" defaultValue={item?.room ?? ""} /></Field>
+          <Field label="Functional area"><input name="area" defaultValue={item?.area ?? ""} /></Field>
           <Field label="Specific location"><input name="specificLocation" defaultValue={item?.specificLocation ?? ""} /></Field>
           <Field label="Classification">
             <select name="acmClassification" defaultValue={item?.acmClassification ?? "unknown"}>
@@ -251,12 +266,15 @@ export function InventoryEditor({
             </select>
           </Field>
           <Field label="Quantity"><input name="currentQuantity" type="number" step="0.1" defaultValue={item?.currentQuantity ?? ""} /></Field>
+          <Field label="Original quantity"><input name="originalQuantity" type="number" step="0.1" defaultValue={item?.originalQuantity ?? ""} /></Field>
           <Field label="Unit">
             <select name="quantityUnit" defaultValue={item?.quantityUnit ?? "SF"}>
               {["SF", "LF", "CF", "EA", "Units"].map((u) => <option key={u}>{u}</option>)}
             </select>
           </Field>
           <Field label="% asbestos"><input name="asbestosPercent" type="number" step="0.1" defaultValue={item?.asbestosPercent ?? ""} /></Field>
+          <Field label="Asbestos detected"><select name="asbestosDetected" defaultValue={item?.asbestosDetected == null ? "" : item.asbestosDetected ? "yes" : "no"}><option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
+          <Field label="Fiber types"><input name="fiberTypes" defaultValue={item ? JSON.parse(item.fiberTypes).join(", ") : ""} placeholder="Chrysotile, Amosite" /></Field>
           <Field label="Friable">
             <select name="friable" defaultValue={item?.friable ?? ""}>
               <option value="">—</option>
@@ -265,7 +283,13 @@ export function InventoryEditor({
             </select>
           </Field>
           <Field label="Label"><input name="labelCondition" defaultValue={item?.labelCondition ?? ""} /></Field>
+          <Field label="Label present"><select name="labelPresent" defaultValue={item?.labelPresent == null ? "" : item.labelPresent ? "yes" : "no"}><option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
           <Field label="Response"><input name="responseAction" defaultValue={item?.responseAction ?? ""} /></Field>
+          <Field label="Material class"><input name="materialClass" defaultValue={item?.materialClass ?? ""} /></Field>
+          <Field label="Category I / II"><input name="categoryIorII" defaultValue={item?.categoryIorII ?? ""} /></Field>
+          <Field label="Analytical method"><input name="analyticalMethod" defaultValue={item?.analyticalMethod ?? ""} /></Field>
+          <Field label="Accessibility"><input name="accessibility" defaultValue={item?.accessibility ?? ""} /></Field>
+          <Field label="Disturbance potential"><input name="disturbancePotential" defaultValue={item?.disturbancePotential ?? ""} /></Field>
           <Field label="Status">
             <select name="recordStatus" defaultValue={item?.recordStatus ?? "active"}>
               <option value="active">Active</option>

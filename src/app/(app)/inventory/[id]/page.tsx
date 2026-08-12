@@ -8,6 +8,8 @@ import { formatDate, formatDateTime, formatQty, parseJson } from "@/lib/utils";
 import { InventoryActions } from "@/components/forms/inventory-actions";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { PhotoCompare } from "@/components/forms/photo-compare";
+import { InventoryEditor } from "@/components/forms/entity-editors";
+import { InventorySampleLink } from "@/components/forms/inventory-sample-link";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,8 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
     },
   });
   if (!item) notFound();
+
+  const samplesForLink = !user.isClient ? await db.sample.findMany({ where: { organizationId: user.organizationId, buildingId: item.buildingId }, select: { id: true, sampleNumber: true, material: true }, orderBy: { sampleNumber: "asc" } }) : [];
 
   const fibers = parseJson<string[]>(item.fiberTypes, []);
   const primary = item.photoLinks.find((p) => p.primaryPhoto) ?? item.photoLinks[0];
@@ -117,6 +121,7 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
               </div>
             ))}
             {!item.sampleLinks.length && <p className="text-sm text-ink-3">No linked samples yet.</p>}
+            {!user.isClient && <InventorySampleLink inventoryItemId={item.id} samples={samplesForLink} />}
           </Panel>
 
           <Panel className="p-5">
@@ -149,8 +154,14 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
 
           {!user.isClient && (
             <Panel className="p-5">
-              <SectionTitle>Update record</SectionTitle>
+              <SectionTitle>Quick update</SectionTitle>
               <InventoryActions item={item} />
+            </Panel>
+          )}
+          {!user.isClient && (
+            <Panel className="p-5">
+              <SectionTitle>Edit all inventory details</SectionTitle>
+              <InventoryEditor buildingId={item.buildingId} item={item} />
             </Panel>
           )}
 

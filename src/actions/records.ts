@@ -138,22 +138,35 @@ export async function saveInventory(form: FormData) {
   const buildingId = str(form, "buildingId");
   const qty = num(form, "currentQuantity");
   const patch = {
+    inventoryCode: str(form, "inventoryCode"),
+    internalCode: str(form, "internalCode") || null,
     materialDescription: str(form, "materialDescription"),
     materialCategory: str(form, "materialCategory") || "Miscellaneous",
     floor: str(form, "floor") || null,
     room: str(form, "room") || null,
+    area: str(form, "area") || null,
     specificLocation: str(form, "specificLocation") || null,
     acmClassification: str(form, "acmClassification") || "unknown",
     condition: str(form, "condition") || "good",
     quantityUnit: str(form, "quantityUnit") || "SF",
     currentQuantity: qty,
+    originalQuantity: num(form, "originalQuantity"),
     asbestosPercent: num(form, "asbestosPercent"),
+    asbestosDetected: str(form, "asbestosDetected") === "" ? null : str(form, "asbestosDetected") === "yes",
+    fiberTypes: JSON.stringify(str(form, "fiberTypes").split(",").map((v) => v.trim()).filter(Boolean)),
     labelCondition: str(form, "labelCondition") || null,
+    labelPresent: str(form, "labelPresent") === "" ? null : str(form, "labelPresent") === "yes",
     responseAction: str(form, "responseAction") || null,
     friable: str(form, "friable") || null,
+    materialClass: str(form, "materialClass") || null,
+    categoryIorII: str(form, "categoryIorII") || null,
+    analyticalMethod: str(form, "analyticalMethod") || null,
+    accessibility: str(form, "accessibility") || null,
+    disturbancePotential: str(form, "disturbancePotential") || null,
     notes: str(form, "notes") || null,
     recordStatus: str(form, "recordStatus") || "active",
   };
+  if (!patch.materialDescription || (id && !patch.inventoryCode)) throw new Error("Item number and material description are required");
 
   if (id) {
     const inv = await db.inventoryItem.findFirst({ where: { id, organizationId: user.organizationId } });
@@ -201,8 +214,7 @@ export async function saveInventory(form: FormData) {
       clientId: building.clientId,
       facilityId: building.facilityId,
       buildingId,
-      inventoryCode: code,
-      originalQuantity: qty,
+      inventoryCode: patch.inventoryCode || code,
     },
   });
   if (qty != null) {
@@ -218,6 +230,24 @@ export async function saveInventory(form: FormData) {
   }
   await persistBuildingCompliance(buildingId);
   revalidatePath(`/buildings/${buildingId}`);
+}
+
+export async function linkInventorySample(form: FormData) {
+  const user = await actor(form);
+  const inventoryItemId = str(form, "inventoryItemId");
+  const sampleId = str(form, "sampleId");
+  const layerValue = str(form, "layerNumber");
+  const layerNumber = layerValue ? Number(layerValue) : null;
+  if (layerValue && (!Number.isInteger(layerNumber) || layerNumber! < 1)) throw new Error("Layer number must be a positive whole number");
+  const item = await db.inventoryItem.findFirst({ where: { id: inventoryItemId, organizationId: user.organizationId } });
+  const sample = item ? await db.sample.findFirst({ where: { id: sampleId, organizationId: user.organizationId, buildingId: item.buildingId } }) : null;
+  if (!item || !sample) throw new Error("Select a sample from this building");
+  const linkType = str(form, "linkType") || "supporting";
+  const existingLink = await db.sampleInventoryLink.findFirst({ where: { sampleId, inventoryItemId, layerNumber } });
+  if (existingLink) await db.sampleInventoryLink.update({ where: { id: existingLink.id }, data: { linkType } });
+  else await db.sampleInventoryLink.create({ data: { sampleId, inventoryItemId, layerNumber: layerNumber ?? undefined, linkType } });
+  await audit({ user, action: "inventory.sample.link", recordType: "inventory", recordId: item.id, newValue: { sampleId, layerNumber, linkType } });
+  revalidatePath(`/inventory/${item.id}`);
 }
 
 export async function saveSample(form: FormData) {
