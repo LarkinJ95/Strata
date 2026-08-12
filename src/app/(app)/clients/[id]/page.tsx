@@ -13,7 +13,12 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   if (!user) redirect("/login");
   const client = await db.client.findFirst({
     where: { id, organizationId: user.organizationId },
-    include: { facilities: { include: { buildings: true } } },
+    include: {
+      facilities: {
+        orderBy: { facilityId: "asc" },
+        include: { buildings: { orderBy: { buildingNumber: "asc" } } },
+      },
+    },
   });
   if (!client) notFound();
 
@@ -36,18 +41,18 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
           <FacilityEditor clientId={client.id} />
         </div>
       )}
-      <div className="mt-6 space-y-4">
+      <div className="mt-5 space-y-3">
         {client.facilities.map((f) => (
-          <Panel key={f.id} className="p-4">
+          <Panel key={f.id} className="p-3">
             <SectionTitle action={!user.isClient ? <FacilityEditor clientId={client.id} facility={f} /> : undefined}>{f.name} · {f.facilityId}</SectionTitle>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {f.buildings.map((b) => (
-                <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-xl border border-[rgba(16,36,72,0.06)] px-3 py-3 hover:bg-paper-2">
+                <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
                   <div className="flex items-center justify-between">
-                    <div className="font-medium">{b.buildingNumber} · {b.name}</div>
+                    <div className="truncate text-sm font-medium">{b.buildingNumber} · {b.name}</div>
                     <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
                   </div>
-                  <div className="text-xs text-ink-3">{b.buildingUse} · {b.yearConstructed}</div>
+                  {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
                 </Link>
               ))}
             </div>
