@@ -49,7 +49,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               {f.buildings.map((b) => (
                 <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
                   <div className="flex items-center justify-between">
-                    <div className="truncate text-sm font-medium">{b.buildingNumber} · {b.name}</div>
+                    <div className="truncate text-sm font-medium">{b.buildingNumber} Building</div>
                     <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
                   </div>
                   {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
