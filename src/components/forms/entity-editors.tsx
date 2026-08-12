@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AccessField, Disclose } from "@/components/forms/access-field";
 import {
   saveBuilding,
@@ -47,9 +49,25 @@ export function ClientEditor({
     notes?: string | null;
   };
 }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [message, setMessage] = useState("");
   return (
     <Disclose label={client?.id ? "Edit client" : "Add client"}>
-      <form action={saveClient} className="space-y-3">
+      <form action={(formData) => start(async () => {
+        if (!client?.id) {
+          await saveClient(formData);
+          return;
+        }
+        setMessage("");
+        try {
+          await saveClient(formData);
+          setMessage("Client saved.");
+          router.refresh();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not save client.");
+        }
+      })} className="space-y-3">
         <AccessField />
         {client?.id && <input type="hidden" name="id" value={client.id} />}
         <Grid>
@@ -73,7 +91,10 @@ export function ClientEditor({
         </Grid>
         <Field label="Inspection requirements"><textarea name="inspectionReqs" rows={2} defaultValue={client?.inspectionReqs ?? ""} /></Field>
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={client?.notes ?? ""} /></Field>
-        <button className="btn btn-primary">{client?.id ? "Save client" : "Create client"}</button>
+        <div className="flex items-center gap-3">
+          <button className="btn btn-primary" disabled={pending}>{pending ? "Saving…" : client?.id ? "Save client" : "Create client"}</button>
+          {message && <span role="status" className={message.endsWith(".") && !message.startsWith("Could") && message !== "Not allowed" ? "text-sm text-teal-dim" : "text-sm text-status-action"}>{message}</span>}
+        </div>
       </form>
     </Disclose>
   );
