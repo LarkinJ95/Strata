@@ -3,6 +3,75 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { startInspection, submitInspection, updateRepairStatus } from "@/actions/mutations";
+import { Disclose } from "@/components/forms/access-field";
+
+type InspectionBuilding = {
+  id: string;
+  buildingNumber: string;
+  name: string;
+  client: { name: string };
+  facility: { name: string; facilityId: string };
+};
+
+export function AddInspectionControl({ buildings }: { buildings: InspectionBuilding[] }) {
+  const router = useRouter();
+  const [buildingId, setBuildingId] = useState("");
+  const [type, setType] = useState("annual_inspection");
+  const [message, setMessage] = useState("");
+  const [pending, start] = useTransition();
+
+  return (
+    <Disclose label="Add inspection">
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!buildingId) return;
+          setMessage("");
+          start(async () => {
+            try {
+              const id = await startInspection(buildingId, type);
+              router.push(`/inspections/${id}/field`);
+            } catch (error) {
+              setMessage(error instanceof Error ? error.message : "Could not create inspection.");
+            }
+          });
+        }}
+      >
+        <div className="field">
+          <label>Building</label>
+          <select value={buildingId} onChange={(event) => setBuildingId(event.target.value)} required>
+            <option value="">Select a building</option>
+            {buildings.map((building) => (
+              <option key={building.id} value={building.id}>
+                {building.client.name} · {building.facility.name} · {building.buildingNumber} — {building.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Inspection type</label>
+          <select value={type} onChange={(event) => setType(event.target.value)}>
+            {[
+              ["annual_inspection", "Annual inspection"],
+              ["periodic_surveillance", "Periodic surveillance"],
+              ["reinspection", "Reinspection"],
+              ["limited_survey", "Limited survey"],
+              ["pre_renovation", "Pre-renovation"],
+              ["pre_demolition", "Pre-demolition"],
+            ].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="btn btn-primary" disabled={pending || !buildingId}>
+            {pending ? "Creating…" : "Create and open inspection"}
+          </button>
+          {message && <span role="status" className="text-sm text-status-action">{message}</span>}
+        </div>
+      </form>
+    </Disclose>
+  );
+}
 
 export function StartInspectionButton({ buildingId }: { buildingId: string }) {
   const router = useRouter();

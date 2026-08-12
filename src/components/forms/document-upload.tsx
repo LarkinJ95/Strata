@@ -1,0 +1,72 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { uploadBuildingDocument } from "@/actions/mutations";
+
+export function DocumentUpload({ buildingId }: { buildingId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [message, setMessage] = useState("");
+
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        data.set("buildingId", buildingId);
+        setMessage("");
+        start(async () => {
+          try {
+            await uploadBuildingDocument(data);
+            event.currentTarget.reset();
+            setMessage("Document stored.");
+            router.refresh();
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Could not upload document.");
+          }
+        });
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="field md:col-span-2">
+          <label>File</label>
+          <input name="file" type="file" required />
+        </div>
+        <div className="field">
+          <label>Document name</label>
+          <input name="name" placeholder="Uses the filename when blank" />
+        </div>
+        <div className="field">
+          <label>Document type</label>
+          <select name="docType" defaultValue="other">
+            {[
+              ["survey_report", "Survey report"],
+              ["management_plan", "Management plan"],
+              ["inspection_report", "Inspection report"],
+              ["laboratory_report", "Laboratory report"],
+              ["abatement_record", "Abatement record"],
+              ["chain_of_custody", "Chain of custody"],
+              ["waste_manifest", "Waste manifest"],
+              ["drawing", "Drawing / floor plan"],
+              ["other", "Other"],
+            ].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Document date</label>
+          <input name="documentDate" type="date" />
+        </div>
+        <div className="field">
+          <label>Description</label>
+          <input name="description" placeholder="Optional" />
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <button className="btn btn-primary" disabled={pending}>{pending ? "Uploading…" : "Upload document"}</button>
+        {message && <span role="status" className={message === "Document stored." ? "text-sm text-teal-dim" : "text-sm text-status-action"}>{message}</span>}
+      </div>
+    </form>
+  );
+}

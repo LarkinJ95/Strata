@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { buildingWhere, getSession } from "@/lib/auth";
 import { inspectorWorkspace } from "@/lib/queries";
 import { db } from "@/lib/db";
 import { dataScope } from "@/lib/auth";
 import { Chip, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
 import { formatDate, INSPECTION_TYPES } from "@/lib/utils";
+import { AddInspectionControl } from "@/components/forms/actions-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +14,28 @@ export default async function InspectionsPage() {
   const user = await getSession();
   if (!user) redirect("/login");
   const mine = user.isClient ? null : await inspectorWorkspace(user);
-  const all = await db.inspection.findMany({
-    where: dataScope(user),
-    include: { building: { include: { client: true } }, inspector: true },
-    orderBy: { scheduledDate: "desc" },
-    take: 40,
-  });
+  const [all, buildings] = await Promise.all([
+    db.inspection.findMany({
+      where: dataScope(user),
+      include: { building: { include: { client: true } }, inspector: true },
+      orderBy: { scheduledDate: "desc" },
+      take: 40,
+    }),
+    user.isClient ? Promise.resolve([]) : db.building.findMany({
+      where: buildingWhere(user),
+      include: { client: true, facility: true },
+      orderBy: [{ client: { name: "asc" } }, { facility: { name: "asc" } }, { buildingNumber: "asc" }],
+    }),
+  ]);
 
   return (
     <div>
-      <PageHeader kicker="Field program" title={user.isClient ? "Inspections" : "My inspections"} description="Resume drafts, finish verification, and keep the surveillance calendar current." />
+      <PageHeader
+        kicker="Field program"
+        title={user.isClient ? "Inspections" : "My inspections"}
+        description="Resume drafts, finish verification, and keep the surveillance calendar current."
+        actions={!user.isClient && <AddInspectionControl buildings={buildings} />}
+      />
 
       {mine && (
         <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

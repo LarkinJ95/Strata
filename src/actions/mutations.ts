@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { assertBuildingAccess, can, getSession } from "@/lib/auth";
 import { activity, audit } from "@/lib/audit";
 import { persistBuildingCompliance } from "@/lib/compliance";
 import { putUpload } from "@/lib/storage";
@@ -771,6 +771,7 @@ export async function createSuspectMaterial(input: {
 
 export async function uploadPhoto(formData: FormData) {
   const user = await actor();
+  if (!can(user, "photos.add")) throw new Error("Not allowed to upload photographs");
   const file = formData.get("file") as File | null;
   if (!file) throw new Error("No file");
   const buildingId = String(formData.get("buildingId") || "");
@@ -783,6 +784,7 @@ export async function uploadPhoto(formData: FormData) {
   const building = buildingId
     ? await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } })
     : null;
+  if (!building || !assertBuildingAccess(user, building)) throw new Error("Building not found");
 
   const storageKey = await putUpload({ organizationId: user.organizationId, category: "photos", file });
 
@@ -817,7 +819,55 @@ export async function uploadPhoto(formData: FormData) {
     },
   });
   revalidatePath("/");
+  revalidatePath(`/buildings/${building.id}`);
   return { id: photo.id, storageKey };
+}
+
+export async function uploadBuildingDocument(formData: FormData) {
+  const user = await actor();
+  if (!can(user, "documents.upload")) throw new Error("Not allowed to upload documents");
+  const file = formData.get("file");
+  if (!(file instanceof File) || !file.size) throw new Error("Choose a file to upload");
+
+  const buildingId = String(formData.get("buildingId") || "");
+  const building = await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } });
+  if (!building || !assertBuildingAccess(user, building)) throw new Error("Building not found");
+
+  const dateValue = String(formData.get("documentDate") || "");
+  const documentDate = dateValue ? new Date(`${dateValue}T00:00:00.000Z`) : null;
+  if (documentDate && Number.isNaN(documentDate.getTime())) throw new Error("Invalid document date");
+
+  const storageKey = await putUpload({ organizationId: user.organizationId, category: "documents", file });
+  const document = await db.document.create({
+    data: {
+      organizationId: user.organizationId,
+      clientId: building.clientId,
+      buildingId: building.id,
+      name: String(formData.get("name") || file.name).trim() || file.name,
+      docType: String(formData.get("docType") || "other"),
+      storageKey,
+      originalFilename: file.name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      documentDate,
+      description: String(formData.get("description") || "").trim() || null,
+      visibility: "internal",
+      uploadedById: user.id,
+    },
+  });
+  await activity({
+    user,
+    organizationId: user.organizationId,
+    clientId: building.clientId,
+    buildingId: building.id,
+    eventType: "document",
+    title: "Document uploaded",
+    detail: document.name,
+  });
+  await audit({ user, action: "document.upload", recordType: "document", recordId: document.id });
+  revalidatePath("/");
+  revalidatePath(`/buildings/${building.id}`);
+  return { id: document.id, storageKey };
 }
 
 export async function markNotificationsRead() {
