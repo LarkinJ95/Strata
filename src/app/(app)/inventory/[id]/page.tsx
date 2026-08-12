@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { AcmChip, ConditionChip, Meta, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
+import { AcmChip, ConditionChip, Meta, Panel, SectionTitle } from "@/components/ui/primitives";
 import { PhotoThumb } from "@/components/records";
 import { formatDate, formatDateTime, formatQty, parseJson } from "@/lib/utils";
 import { InventoryActions } from "@/components/forms/inventory-actions";
@@ -43,17 +43,8 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
 
   return (
     <div>
-      <PageHeader
-        kicker={`${item.building.client.name} · ${item.building.name}`}
-        title={item.materialDescription}
-        description={`${item.inventoryCode} · ${item.floor} · ${item.room} · ${item.specificLocation}`}
-        actions={
-          <>
-            <Link href={`/inventory/${item.id}/print`} className="btn btn-ghost">Print record</Link>
-            <Link href={`/buildings/${item.buildingId}`} className="btn btn-ghost">Building</Link>
-          </>
-        }
-      />
+      <div className="crumb mb-3"><Link href="/clients">Clients</Link><span> › </span><Link href={`/clients/${item.clientId}`}>{item.building.client.name}</Link><span> › </span><Link href={`/buildings/${item.buildingId}`}>{item.building.name}</Link><span> › </span><span className="text-ink">{item.inventoryCode}</span></div>
+      <Panel className="mb-4 p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h1 className="font-display text-2xl font-semibold">{item.materialDescription}</h1><AcmChip value={item.acmClassification} /><ConditionChip value={item.condition} /></div><p className="mt-1 text-sm text-ink-3">{item.inventoryCode}{item.internalCode ? ` · ${item.internalCode}` : ""} · {[item.floor, item.room, item.area, item.specificLocation].filter(Boolean).join(" · ")}</p></div><div className="flex gap-2"><Link href={`/inventory/${item.id}/print`} className="btn btn-ghost">Print record</Link><Link href={`/buildings/${item.buildingId}`} className="btn btn-ghost">Building</Link></div></div></Panel>
 
       {item.isProvisional && (
         <div className="mb-4 rounded-xl bg-[#fff4e0] px-4 py-2 text-sm text-[#9a5808]">

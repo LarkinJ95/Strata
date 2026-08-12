@@ -129,9 +129,8 @@ export default async function BuildingPage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Chip tone={statusTone}>{statusLabel}</Chip>
-            <div className="mt-2 font-display text-xl font-semibold">
-              #{building.buildingNumber} · {building.facility.name} · {building.client.name}
-            </div>
+            <h1 className="mt-2 font-display text-2xl font-semibold">{building.name}</h1>
+            <div className="mt-1 text-sm text-ink-3">#{building.buildingNumber} · {building.facility.name} · {building.client.name}</div>
             <div className="mt-1 flex items-center gap-1.5 text-sm text-ink-3">
               <MapPin size={14} /> {building.address || building.facility.address || "—"}
             </div>

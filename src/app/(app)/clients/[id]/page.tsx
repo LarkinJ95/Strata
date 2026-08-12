@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { Chip, Meta, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
+import { Chip, Meta, Panel, SectionTitle } from "@/components/ui/primitives";
 import { BuildingEditor, ClientEditor, FacilityEditor } from "@/components/forms/entity-editors";
 
 export const dynamic = "force-dynamic";
@@ -29,12 +29,12 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         <span> › </span>
         <span className="text-ink">{client.name}</span>
       </div>
-      <PageHeader kicker={client.clientNumber} title={client.name} description={`${client.address ?? ""}, ${client.city ?? ""} ${client.state ?? ""}`} />
-      <div className="grid gap-4 md:grid-cols-3">
-        <Panel className="p-4"><Meta label="Primary contact" value={`${client.primaryContact} · ${client.primaryEmail}`} /></Panel>
-        <Panel className="p-4"><Meta label="Photo policy" value={client.photoPolicy} /></Panel>
-        <Panel className="p-4"><Meta label="Inspection requirements" value={client.inspectionReqs} /></Panel>
-      </div>
+      <Panel className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><div className="mono-id text-[11px] text-teal-dim">{client.clientNumber}</div><h1 className="mt-1 font-display text-2xl font-semibold">{client.name}</h1><p className="mt-1 text-sm text-ink-3">{[client.address, client.city, client.state, client.postalCode].filter(Boolean).join(", ") || "Address not recorded"}</p></div>
+          <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2"><Meta label="Primary contact" value={[client.primaryContact, client.primaryEmail, client.primaryPhone].filter(Boolean).join(" · ")} /><Meta label="Photo policy" value={client.photoPolicy.replaceAll("_", " ")} /><Meta label="Inspection requirements" value={client.inspectionReqs} /></div>
+        </div>
+      </Panel>
       {!user.isClient && (
         <div className="mt-4 space-y-3">
           <ClientEditor client={client} />
