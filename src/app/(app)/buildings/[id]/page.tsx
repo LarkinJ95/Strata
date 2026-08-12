@@ -14,7 +14,7 @@ import {
   Shield,
   Wrench,
 } from "lucide-react";
-import { getSession, assertBuildingAccess } from "@/lib/auth";
+import { can, getSession, assertBuildingAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { evaluateBuilding } from "@/lib/compliance";
 import { AcmChip, Chip, ConditionChip, Panel } from "@/components/ui/primitives";
@@ -23,6 +23,7 @@ import { fileUrl } from "@/lib/files";
 import { formatDate, formatNumber, parseJson, photoPolicyMessage } from "@/lib/utils";
 import { StartInspectionButton } from "@/components/forms/actions-ui";
 import { PhotoUpload } from "@/components/forms/photo-upload";
+import { DocumentUpload } from "@/components/forms/document-upload";
 import {
   BuildingEditor,
   FloorEditor,
@@ -271,7 +272,6 @@ export default async function BuildingPage({
                         <th className="px-4 py-3 font-medium">Classification</th>
                         <th className="px-4 py-3 font-medium">Condition</th>
                         <th className="px-4 py-3 text-right font-medium">Current quantity</th>
-                        {!user.isClient && <th className="px-4 py-3 text-right font-medium">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[rgba(16,36,72,0.08)]">
@@ -279,20 +279,11 @@ export default async function BuildingPage({
                         const location = [it.floor, it.room, it.area, it.specificLocation].filter(Boolean).join(" · ");
                         return (
                           <tr key={it.id} className="align-top transition-colors hover:bg-[rgba(16,104,108,0.035)]">
-                            <td className="px-4 py-3">
-                              <Link href={`/inventory/${it.id}`} className="mono-id font-medium text-teal-dim">{it.inventoryCode}</Link>
-                              {it.internalCode && <div className="mt-1 text-[11px] text-ink-3">{it.internalCode}</div>}
-                            </td>
-                            <td className="px-4 py-3">
-                              <Link href={`/inventory/${it.id}`} className="font-medium text-ink hover:text-teal-dim">{it.materialDescription}</Link>
-                              <div className="mt-1 text-xs text-ink-3">{location || "Location not specified"}</div>
-                            </td>
-                            <td className="px-4 py-3"><AcmChip value={it.acmClassification} /></td>
-                            <td className="px-4 py-3"><ConditionChip value={it.condition} /></td>
-                            <td className="px-4 py-3 text-right whitespace-nowrap text-ink-2">
-                              {formatNumber(it.currentQuantity)} {it.quantityUnit}
-                            </td>
-                            {!user.isClient && <td className="px-4 py-2 text-right"><InventoryEditor buildingId={building.id} item={it} /></td>}
+                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><span className="mono-id font-medium text-teal-dim">{it.inventoryCode}</span>{it.internalCode && <span className="mt-1 block text-[11px] text-ink-3">{it.internalCode}</span>}</Link></td>
+                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><span className="font-medium text-ink">{it.materialDescription}</span><span className="mt-1 block text-xs text-ink-3">{location || "Location not specified"}</span></Link></td>
+                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><AcmChip value={it.acmClassification} /></Link></td>
+                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><ConditionChip value={it.condition} /></Link></td>
+                            <td className="p-0 text-right"><Link href={`/inventory/${it.id}`} className="block px-4 py-3 whitespace-nowrap text-ink-2">{formatNumber(it.currentQuantity)} {it.quantityUnit}</Link></td>
                           </tr>
                         );
                       })}
@@ -441,26 +432,43 @@ export default async function BuildingPage({
         )}
 
         {tab === "photos" && (
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {building.photos.map((p) => (
-              <PhotoThumb key={p.id} storageKey={p.storageKey} caption={p.originalFilename} />
-            ))}
-            {!building.photos.length && <p className="text-ink-3">No photographs on file.</p>}
+          <div className="space-y-4">
+            {can(user, "photos.add") && building.photoPolicy !== "prohibited" && (
+              <Panel className="p-5">
+                <div className="mb-3 font-display text-[15px] font-semibold">Upload photographs</div>
+                <PhotoUpload buildingId={building.id} recordType="building" recordId={building.id} />
+              </Panel>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              {building.photos.map((p) => (
+                <PhotoThumb key={p.id} storageKey={p.storageKey} caption={p.originalFilename} />
+              ))}
+              {!building.photos.length && <p className="text-ink-3">No photographs on file.</p>}
+            </div>
           </div>
         )}
 
         {tab === "documents" && (
-          <Panel className="p-5">
-            {building.documents.map((d) => (
-              <a key={d.id} href={fileUrl(d.storageKey)} className="mb-3 block rounded-xl px-2 py-2 hover:bg-paper-2">
-                <div className="font-medium">{d.name}</div>
-                <div className="text-xs text-ink-3">{d.docType.replaceAll("_", " ")} · rev {d.revision} · {formatDate(d.documentDate)}</div>
-              </a>
-            ))}
-            {building.floorPlans.map((fp) => (
-              <div key={fp.id} className="mb-2 text-sm text-ink-2">Floor plan · {fp.name}</div>
-            ))}
-          </Panel>
+          <div className="space-y-4">
+            {can(user, "documents.upload") && (
+              <Panel className="p-5">
+                <div className="mb-3 font-display text-[15px] font-semibold">Upload document</div>
+                <DocumentUpload buildingId={building.id} />
+              </Panel>
+            )}
+            <Panel className="p-5">
+              {building.documents.map((d) => (
+                <a key={d.id} href={fileUrl(d.storageKey)} className="mb-3 block rounded-xl px-2 py-2 hover:bg-paper-2">
+                  <div className="font-medium">{d.name}</div>
+                  <div className="text-xs text-ink-3">{d.docType.replaceAll("_", " ")} · rev {d.revision} · {formatDate(d.documentDate)}</div>
+                </a>
+              ))}
+              {building.floorPlans.map((fp) => (
+                <div key={fp.id} className="mb-2 text-sm text-ink-2">Floor plan · {fp.name}</div>
+              ))}
+              {!building.documents.length && !building.floorPlans.length && <p className="text-sm text-ink-3">No documents on file.</p>}
+            </Panel>
+          </div>
         )}
 
         {tab === "activity" && (

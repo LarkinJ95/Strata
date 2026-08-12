@@ -7,14 +7,23 @@ import { PhotoThumb } from "@/components/records";
 import { formatDate, formatDateTime, formatQty, parseJson } from "@/lib/utils";
 import { InventoryActions } from "@/components/forms/inventory-actions";
 import { PhotoUpload } from "@/components/forms/photo-upload";
-import { PhotoCompare } from "@/components/forms/photo-compare";
 import { InventoryEditor } from "@/components/forms/entity-editors";
 import { InventorySampleLink } from "@/components/forms/inventory-sample-link";
+import { fileUrl } from "@/lib/files";
 
 export const dynamic = "force-dynamic";
 
-export default async function InventoryDetail({ params }: { params: Promise<{ id: string }> }) {
+const SECTIONS = ["status", "photos", "samples", "repairs", "documents", "history"] as const;
+
+export default async function InventoryDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
   const user = await getSession();
   if (!user) redirect("/login");
   const item = await db.inventoryItem.findFirst({
@@ -29,7 +38,7 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
       repairs: { orderBy: { identifiedAt: "desc" } },
       removals: { orderBy: { removedAt: "desc" } },
       photoLinks: { include: { photo: true }, orderBy: { photo: { uploadedAt: "desc" } } },
-      documents: true,
+      documents: { where: user.isClient ? { visibility: "client" } : undefined, orderBy: { uploadedAt: "desc" } },
       inspectionItems: { include: { inspection: true }, orderBy: { inspectedAt: "desc" } },
       activities: { orderBy: { createdAt: "desc" }, take: 20, include: { actor: true } },
     },
@@ -40,6 +49,8 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
 
   const fibers = parseJson<string[]>(item.fiberTypes, []);
   const primary = item.photoLinks.find((p) => p.primaryPhoto) ?? item.photoLinks[0];
+  const section = SECTIONS.includes(sp.section as (typeof SECTIONS)[number]) ? sp.section! : "status";
+  const href = (key: string) => `/inventory/${item.id}${key === "status" ? "" : `?section=${key}`}`;
 
   return (
     <div>
@@ -52,9 +63,17 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
         </div>
       )}
 
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-[rgba(16,36,72,0.08)]">
+        {SECTIONS.map((key) => (
+          <Link key={key} href={href(key)} className={`bldg-tab capitalize ${section === key ? "active" : ""}`}>
+            {key === "status" ? "Current status" : key === "repairs" ? "Repairs & removals" : key}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
-          <Panel className="p-5">
+          {section === "status" && <Panel className="p-5">
             <SectionTitle>Current status</SectionTitle>
             <div className="flex flex-wrap gap-2">
               <AcmChip value={item.acmClassification} />
@@ -77,9 +96,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
               <Meta label="Category I / II" value={item.categoryIorII} />
             </div>
             {item.notes && <p className="mt-4 text-sm text-ink-2">{item.notes}</p>}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "photos" && <Panel className="p-5">
             <SectionTitle>Visual documentation</SectionTitle>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               {item.photoLinks.map((l) => (
@@ -94,9 +113,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
                 <PhotoUpload buildingId={item.buildingId} recordType="inventory" recordId={item.id} />
               </div>
             )}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "samples" && <Panel className="p-5">
             <SectionTitle>Supporting samples</SectionTitle>
             {item.sampleLinks.map((link) => (
               <div key={link.id} className="mb-4 rounded-xl border border-[rgba(16,36,72,0.06)] p-3">
@@ -113,9 +132,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
             ))}
             {!item.sampleLinks.length && <p className="text-sm text-ink-3">No linked samples yet.</p>}
             {!user.isClient && <InventorySampleLink inventoryItemId={item.id} samples={samplesForLink} />}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "history" && <Panel className="p-5">
             <SectionTitle>Quantity history</SectionTitle>
             <div className="table-wrap">
               <table className="data">
@@ -133,30 +152,30 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
                 </tbody>
               </table>
             </div>
-          </Panel>
+          </Panel>}
         </div>
 
         <div className="space-y-6">
-          {primary && (
+          {section === "status" && primary && (
             <Panel className="overflow-hidden">
               <PhotoThumb storageKey={primary.photo.storageKey} caption="Primary inventory photograph" />
             </Panel>
           )}
 
-          {!user.isClient && (
+          {section === "status" && !user.isClient && (
             <Panel className="p-5">
               <SectionTitle>Quick update</SectionTitle>
               <InventoryActions item={item} />
             </Panel>
           )}
-          {!user.isClient && (
+          {section === "status" && !user.isClient && (
             <Panel className="p-5">
               <SectionTitle>Edit all inventory details</SectionTitle>
               <InventoryEditor buildingId={item.buildingId} item={item} />
             </Panel>
           )}
 
-          <Panel className="p-5">
+          {section === "history" && <Panel className="p-5">
             <SectionTitle>Condition history</SectionTitle>
             <div className="timeline space-y-3 pl-7">
               {item.conditionHistory.map((h) => (
@@ -168,9 +187,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
                 </div>
               ))}
             </div>
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "repairs" && <Panel className="p-5">
             <SectionTitle>Repairs</SectionTitle>
             {item.repairs.map((r) => (
               <Link key={r.id} href={`/repairs/${r.id}`} className="mb-2 block rounded-lg px-2 py-1.5 hover:bg-paper-2">
@@ -179,9 +198,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
               </Link>
             ))}
             {!item.repairs.length && <p className="text-sm text-ink-3">No repairs.</p>}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "repairs" && <Panel className="p-5">
             <SectionTitle>Removals</SectionTitle>
             {item.removals.map((r) => (
               <div key={r.id} className="mb-2 text-sm">
@@ -190,9 +209,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
               </div>
             ))}
             {!item.removals.length && <p className="text-sm text-ink-3">No removal events. Historical quantities are never deleted.</p>}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "history" && <Panel className="p-5">
             <SectionTitle>Inspection history</SectionTitle>
             {item.inspectionItems.map((ii) => (
               <div key={ii.id} className="mb-2 text-sm">
@@ -202,9 +221,9 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
                 <div className="text-xs text-ink-3">{formatDateTime(ii.inspectedAt)} · {ii.currentCondition || "not inspected"}</div>
               </div>
             ))}
-          </Panel>
+          </Panel>}
 
-          <Panel className="p-5">
+          {section === "history" && <Panel className="p-5">
             <SectionTitle>Full timeline</SectionTitle>
             {item.activities.map((a) => (
               <div key={a.id} className="mb-2">
@@ -212,9 +231,19 @@ export default async function InventoryDetail({ params }: { params: Promise<{ id
                 <div className="text-sm font-medium">{a.title}</div>
               </div>
             ))}
-          </Panel>
+          </Panel>}
         </div>
       </div>
+
+      {section === "documents" && (
+        <Panel className="p-5">
+          <SectionTitle>Documentation</SectionTitle>
+          <div className="table-wrap"><table className="data"><thead><tr><th>Document</th><th>Type</th><th>Date</th><th>Revision</th></tr></thead><tbody>
+            {item.documents.map((doc) => <tr key={doc.id}><td><a href={fileUrl(doc.storageKey)} target="_blank" rel="noreferrer" className="font-medium text-teal-dim hover:underline">{doc.name}</a>{doc.description && <div className="mt-1 text-xs text-ink-3">{doc.description}</div>}</td><td>{doc.docType}</td><td>{formatDate(doc.documentDate ?? doc.uploadedAt)}</td><td>{doc.revision || "—"}</td></tr>)}
+            {!item.documents.length && <tr><td colSpan={4} className="text-ink-3">No documents on file.</td></tr>}
+          </tbody></table></div>
+        </Panel>
+      )}
     </div>
   );
 }
