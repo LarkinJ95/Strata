@@ -13,8 +13,6 @@ export default async function BuildingsPage() {
   const buildings = await db.building.findMany({
     where: buildingWhere(user),
     include: {
-      client: true,
-      facility: true,
       _count: { select: { inventoryItems: true, repairs: true, samples: true } },
     },
     orderBy: [{ clientId: "asc" }, { buildingNumber: "asc" }],
@@ -34,7 +32,6 @@ export default async function BuildingsPage() {
                   <div>
                     <div className="mono-id text-[11px] text-teal-dim">{b.buildingNumber}</div>
                     <div className="font-display text-lg font-semibold">{b.name}</div>
-                    <div className="text-xs text-ink-3">{b.client.name} · {b.facility.name}</div>
                   </div>
                   <Chip tone={tone}>{b.complianceStatus === "current" ? "Current" : b.complianceStatus === "attention" ? "Attention" : "Action"}</Chip>
                 </div>
