@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Search, Settings, Users } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Settings, Users } from "lucide-react";
 import { useTransition } from "react";
 import type { SessionUser } from "@/lib/types";
 import { clearSession } from "@/lib/session-client";
 import { cn, initials } from "@/lib/utils";
+import { GlobalSearch } from "@/components/layout/global-search";
 
 const STAFF_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -98,10 +99,7 @@ export function AppShell({
       <div className={cn(!fieldMode && "lg:pl-[232px]")}>
         {!fieldMode && (
           <div className="sticky top-0 z-20 border-b border-[rgba(16,36,72,0.08)] bg-[#f1f5fa]/90 px-4 py-2.5 backdrop-blur-xl md:px-6">
-            <form action="/search" method="get" className="relative max-w-xl">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={15} />
-              <input name="q" type="search" minLength={2} placeholder="Search clients, facilities, buildings, inventory…" className="h-9 w-full rounded-xl border border-[rgba(16,36,72,0.11)] bg-white pl-9 pr-3 text-sm outline-none transition focus:border-teal focus:ring-4 focus:ring-teal/10" />
-            </form>
+            <GlobalSearch />
           </div>
         )}
         <main className="px-4 py-4 md:px-6">{children}</main>
