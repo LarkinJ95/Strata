@@ -67,22 +67,23 @@ export async function saveClient(form: FormData) {
 
 export async function saveFacility(form: FormData) {
   const user = await actor(form);
+  const id = str(form, "id");
   const clientId = str(form, "clientId");
   const client = await db.client.findFirst({ where: { id: clientId, organizationId: user.organizationId } });
   if (!client) throw new Error("Client not found");
-  const created = await db.facility.create({
-    data: {
-      organizationId: user.organizationId,
-      clientId,
-      name: str(form, "name") || "New facility",
-      facilityId: str(form, "facilityId") || `FAC-${Date.now().toString().slice(-5)}`,
-      address: str(form, "address") || null,
-      city: str(form, "city") || null,
-      state: str(form, "state") || null,
-    },
-  });
+  const data = { name: str(form, "name"), facilityId: str(form, "facilityId"), address: str(form, "address") || null, city: str(form, "city") || null, state: str(form, "state") || null, postalCode: str(form, "postalCode") || null, primaryContact: str(form, "primaryContact") || null, environmentalContact: str(form, "environmentalContact") || null, emergencyContact: str(form, "emergencyContact") || null, notes: str(form, "notes") || null, status: str(form, "status") || "active" };
+  if (!data.name || !data.facilityId) throw new Error("Facility name and ID are required");
+  if (id) {
+    const existing = await db.facility.findFirst({ where: { id, organizationId: user.organizationId, clientId } });
+    if (!existing) throw new Error("Facility not found");
+    await db.facility.update({ where: { id }, data });
+    await audit({ user, action: "facility.update", recordType: "facility", recordId: id, previousValue: existing, newValue: data });
+    revalidatePath(`/clients/${clientId}`);
+    return;
+  }
+  const created = await db.facility.create({ data: { ...data, organizationId: user.organizationId, clientId } });
+  await audit({ user, action: "facility.create", recordType: "facility", recordId: created.id, newValue: data });
   revalidatePath(`/clients/${clientId}`);
-  void created;
 }
 
 export async function saveBuilding(form: FormData) {

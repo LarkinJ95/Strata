@@ -79,20 +79,27 @@ export function ClientEditor({
   );
 }
 
-export function FacilityEditor({ clientId }: { clientId: string }) {
+export function FacilityEditor({ clientId, facility }: { clientId: string; facility?: { id: string; name: string; facilityId: string; address?: string | null; city?: string | null; state?: string | null; postalCode?: string | null; primaryContact?: string | null; environmentalContact?: string | null; emergencyContact?: string | null; notes?: string | null; status: string } }) {
   return (
-    <Disclose label="Add facility">
+    <Disclose label={facility ? "Edit facility" : "Add facility"}>
       <form action={saveFacility} className="space-y-3">
         <AccessField />
+        {facility && <input type="hidden" name="id" value={facility.id} />}
         <input type="hidden" name="clientId" value={clientId} />
         <Grid>
-          <Field label="Name"><input name="name" required /></Field>
-          <Field label="Facility ID"><input name="facilityId" placeholder="MH-CC" /></Field>
-          <Field label="Address"><input name="address" /></Field>
-          <Field label="City"><input name="city" /></Field>
-          <Field label="State"><input name="state" /></Field>
+          <Field label="Name"><input name="name" defaultValue={facility?.name} required /></Field>
+          <Field label="Facility ID"><input name="facilityId" defaultValue={facility?.facilityId} placeholder="MH-CC" required /></Field>
+          <Field label="Address"><input name="address" defaultValue={facility?.address ?? ""} /></Field>
+          <Field label="City"><input name="city" defaultValue={facility?.city ?? ""} /></Field>
+          <Field label="State"><input name="state" defaultValue={facility?.state ?? ""} /></Field>
+          <Field label="Postal code"><input name="postalCode" defaultValue={facility?.postalCode ?? ""} /></Field>
+          <Field label="Primary contact"><input name="primaryContact" defaultValue={facility?.primaryContact ?? ""} /></Field>
+          <Field label="Environmental contact"><input name="environmentalContact" defaultValue={facility?.environmentalContact ?? ""} /></Field>
+          <Field label="Emergency contact"><input name="emergencyContact" defaultValue={facility?.emergencyContact ?? ""} /></Field>
+          <Field label="Status"><select name="status" defaultValue={facility?.status ?? "active"}><option value="active">Active</option><option value="inactive">Inactive</option></select></Field>
         </Grid>
-        <button className="btn btn-primary">Create facility</button>
+        <Field label="Notes"><textarea name="notes" rows={2} defaultValue={facility?.notes ?? ""} /></Field>
+        <button className="btn btn-primary">{facility ? "Save facility" : "Create facility"}</button>
       </form>
     </Disclose>
   );

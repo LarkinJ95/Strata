@@ -38,8 +38,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       )}
       <div className="mt-6 space-y-4">
         {client.facilities.map((f) => (
-          <Panel key={f.id} className="p-5">
-            <SectionTitle>{f.name} · {f.facilityId}</SectionTitle>
+          <Panel key={f.id} className="p-4">
+            <SectionTitle action={!user.isClient ? <FacilityEditor clientId={client.id} facility={f} /> : undefined}>{f.name} · {f.facilityId}</SectionTitle>
             <div className="grid gap-3 md:grid-cols-2">
               {f.buildings.map((b) => (
                 <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-xl border border-[rgba(16,36,72,0.06)] px-3 py-3 hover:bg-paper-2">

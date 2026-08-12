@@ -49,7 +49,7 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
       <div>
         {kicker && (
           <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-teal">

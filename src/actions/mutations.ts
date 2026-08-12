@@ -823,10 +823,19 @@ export async function markNotificationsRead() {
 export async function globalSearch(q: string) {
   const user = await actor();
   const term = q.trim();
-  if (term.length < 2) return { buildings: [], inventory: [], samples: [], repairs: [], documents: [] };
+  if (term.length < 2) return { clients: [], facilities: [], buildings: [], inventory: [], samples: [], repairs: [], documents: [] };
   const org = { organizationId: user.organizationId };
   const client = user.clientId ? { clientId: user.clientId } : {};
-  const [buildings, inventory, samples, repairs, documents] = await Promise.all([
+  const [clients, facilities, buildings, inventory, samples, repairs, documents] = await Promise.all([
+    db.client.findMany({
+      where: { ...org, ...(user.clientId ? { id: user.clientId } : {}), OR: [{ name: { contains: term } }, { clientNumber: { contains: term } }, { city: { contains: term } }] },
+      take: 8,
+    }),
+    db.facility.findMany({
+      where: { ...org, ...client, OR: [{ name: { contains: term } }, { facilityId: { contains: term } }, { city: { contains: term } }, { address: { contains: term } }] },
+      include: { client: true },
+      take: 8,
+    }),
     db.building.findMany({
       where: { ...org, ...client, OR: [{ name: { contains: term } }, { buildingNumber: { contains: term } }] },
       take: 8,
@@ -868,5 +877,5 @@ export async function globalSearch(q: string) {
       take: 8,
     }),
   ]);
-  return { buildings, inventory, samples, repairs, documents };
+  return { clients, facilities, buildings, inventory, samples, repairs, documents };
 }
