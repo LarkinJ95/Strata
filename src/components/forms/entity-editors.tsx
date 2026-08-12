@@ -227,9 +227,24 @@ export function InventoryEditor({
     recordStatus: string;
   };
 }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [message, setMessage] = useState("");
   return (
     <Disclose label={item ? `Edit ${item.materialDescription}` : "Add inventory material"}>
-      <form action={saveInventory} className="space-y-3">
+      <form
+        action={(formData) => start(async () => {
+          setMessage("");
+          try {
+            await saveInventory(formData);
+            setMessage(item ? "Material saved." : "Material added.");
+            router.refresh();
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Could not save material.");
+          }
+        })}
+        className="space-y-3"
+      >
         <AccessField />
         {item && <input type="hidden" name="id" value={item.id} />}
         <input type="hidden" name="buildingId" value={buildingId} />
@@ -299,7 +314,10 @@ export function InventoryEditor({
           </Field>
         </Grid>
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={item?.notes ?? ""} /></Field>
-        <button className="btn btn-primary">{item ? "Save material" : "Add material"}</button>
+        <div className="flex items-center gap-3">
+          <button className="btn btn-primary" disabled={pending}>{pending ? "Saving…" : item ? "Save material" : "Add material"}</button>
+          {message && <span role="status" className={message.endsWith(".") && !message.startsWith("Could") && message !== "Not allowed" ? "text-sm text-teal-dim" : "text-sm text-status-action"}>{message}</span>}
+        </div>
       </form>
     </Disclose>
   );
