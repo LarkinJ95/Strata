@@ -326,9 +326,11 @@ export function InventoryEditor({
 export function SampleEditor({
   buildingId,
   sample,
+  laboratories,
 }: {
   buildingId: string;
-  sample?: { id: string; sampleNumber: string; material: string; floor: string | null; room: string | null; location: string | null; status: string; notes: string | null };
+  sample?: { id: string; sampleNumber: string; material: string; floor: string | null; room: string | null; location: string | null; laboratoryId: string | null; status: string; notes: string | null };
+  laboratories: { id: string; name: string }[];
 }) {
   return (
     <Disclose label={sample ? `Edit sample ${sample.material}` : "Add sample"}>
@@ -347,6 +349,12 @@ export function SampleEditor({
               {["collected", "submitted", "at_lab", "results_received", "reviewed", "reconciled"].map((s) => (
                 <option key={s} value={s}>{s.replaceAll("_", " ")}</option>
               ))}
+            </select>
+          </Field>
+          <Field label="Laboratory">
+            <select name="laboratoryId" defaultValue={sample?.laboratoryId ?? ""}>
+              <option value="">Not assigned</option>
+              {laboratories.map((lab) => <option key={lab.id} value={lab.id}>{lab.name}</option>)}
             </select>
           </Field>
         </Grid>
@@ -510,10 +518,12 @@ export function PaintSampleEditor({
   floors,
   areas,
   sample,
+  laboratories,
 }: {
   buildingId: string;
   floors: { id: string; name: string }[];
   areas: { id: string; name: string; faCode: string | null }[];
+  laboratories: { id: string; name: string }[];
   sample?: {
     id: string;
     sampleNumber: string;
@@ -596,7 +606,7 @@ export function PaintSampleEditor({
               <option value="no">Not detected</option>
             </select>
           </Field>
-          <Field label="Lab"><input name="laboratory" defaultValue={sample?.laboratory ?? ""} /></Field>
+          <Field label="Laboratory"><select name="laboratory" defaultValue={sample?.laboratory ?? ""}><option value="">Not assigned</option>{laboratories.map((lab) => <option key={lab.id} value={lab.name}>{lab.name}</option>)}</select></Field>
           <Field label="Status">
             <select name="status" defaultValue={sample?.status ?? "results_received"}>
               <option value="collected">Collected</option>

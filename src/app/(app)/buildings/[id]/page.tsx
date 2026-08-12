@@ -87,6 +87,12 @@ export default async function BuildingPage({
   });
   if (!building || !assertBuildingAccess(user, building)) notFound();
 
+  const laboratories = user.isClient ? [] : await db.laboratory.findMany({
+    where: { organizationId: user.organizationId },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
   const compliance = await evaluateBuilding(building.id);
   const items = building.inventoryItems;
   const active = items.filter((i) => i.recordStatus === "active");
@@ -297,7 +303,7 @@ export default async function BuildingPage({
 
         {tab === "samples" && (
           <div className="space-y-3">
-            {!user.isClient && <SampleEditor buildingId={building.id} />}
+            {!user.isClient && <SampleEditor buildingId={building.id} laboratories={laboratories} />}
             {building.samples.map((s) => (
               <Panel key={s.id} className="p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -308,7 +314,7 @@ export default async function BuildingPage({
                   </div>
                   <Chip tone="ice">{s.status.replaceAll("_", " ")}</Chip>
                 </div>
-                {!user.isClient && <SampleEditor buildingId={building.id} sample={s} />}
+                {!user.isClient && <SampleEditor buildingId={building.id} sample={s} laboratories={laboratories} />}
               </Panel>
             ))}
           </div>
@@ -317,7 +323,7 @@ export default async function BuildingPage({
         {tab === "paint" && (
           <div className="space-y-3">
             {!user.isClient && (
-              <PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} />
+              <PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} laboratories={laboratories} />
             )}
             {building.paintSamples.map((s) => (
               <Panel key={s.id} className="p-4">
@@ -338,7 +344,7 @@ export default async function BuildingPage({
                   {s.leadMgCm2 != null && <span>{s.leadMgCm2} mg/cm² · </span>}
                   {s.resultSummary}
                 </div>
-                {!user.isClient && <div className="mt-2"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} sample={s} /></div>}
+                {!user.isClient && <div className="mt-2"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} sample={s} laboratories={laboratories} /></div>}
               </Panel>
             ))}
             {!building.paintSamples.length && <p className="text-sm text-ink-3">No paint samples recorded for this building.</p>}

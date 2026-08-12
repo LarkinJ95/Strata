@@ -268,6 +268,11 @@ export async function saveSample(form: FormData) {
     status: str(form, "status") || "collected",
     notes: str(form, "notes") || null,
   };
+  const laboratoryId = str(form, "laboratoryId") || null;
+  if (laboratoryId) {
+    const laboratory = await db.laboratory.findFirst({ where: { id: laboratoryId, organizationId: user.organizationId } });
+    if (!laboratory) throw new Error("Select a laboratory from Settings");
+  }
   const resultDetected = str(form, "resultDetected");
   const reportedPercent = str(form, "reportedPercent");
   const asbestosPercent = reportedPercent && !reportedPercent.startsWith("<") ? Number(reportedPercent) : null;
@@ -280,7 +285,7 @@ export async function saveSample(form: FormData) {
   if (id) {
     const sample = await db.sample.findFirst({ where: { id, organizationId: user.organizationId } });
     if (!sample) throw new Error("Sample not found");
-    await db.sample.update({ where: { id }, data });
+    await db.sample.update({ where: { id }, data: { ...data, laboratoryId } });
     revalidatePath(`/buildings/${sample.buildingId}`);
     revalidatePath(`/samples/${id}`);
     return;
@@ -301,6 +306,7 @@ export async function saveSample(form: FormData) {
       sampleNumber: data.sampleNumber || `26-${String(n).padStart(3, "0")}`,
       collectionDate: new Date(),
       inspectorId: user.id,
+      laboratoryId,
       analysisMethod: resultDetected ? analysisMethod : null,
       status: resultDetected ? "results_received" : data.status,
     },
