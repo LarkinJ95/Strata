@@ -47,11 +47,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     })),
   }, { paper: (query.get("paper") as "letter" | "legal" | "a4" | "a3" | null) ?? "letter", orientation: (query.get("orientation") as "portrait" | "landscape" | null) ?? "portrait", density: (query.get("density") as "standard" | "compact" | null) ?? "standard", nestLayers: query.get("nestLayers") !== "false", groupRepeated: query.get("groupRepeated") !== "false", includeFloorPlans: query.get("plans") !== "false", includeRemoved: query.get("removed") === "true", floor: query.get("floor") || undefined, functionalAreaId: query.get("functionalAreaId") || undefined });
 
-  const filename = `${building.buildingNumber}-inspection-packet.pdf`;
+  const filename = `${building.name.replace(/[\\/:*?"<>|]/g, "-")} Inspection Packet.pdf`;
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "Content-Length": String(pdf.byteLength),
       "Cache-Control": "private, no-store",
     },
   });

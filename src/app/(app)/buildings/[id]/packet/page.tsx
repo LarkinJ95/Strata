@@ -57,7 +57,7 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
           {!b.floorPlans.length && <li>No drawings uploaded yet — the packet will still include inventory forms.</li>}
         </ul>
         <a href={`/api/buildings/${b.id}/packet?${query}`} className="btn btn-primary mt-5" target="_blank" rel="noreferrer">
-          Open PDF packet
+          Download PDF packet
         </a>
       </Panel>
     </div>
