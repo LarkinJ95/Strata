@@ -61,10 +61,10 @@ export default async function BuildingPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; floor?: string }>;
 }) {
   const { id } = await params;
-  const { tab: rawTab } = await searchParams;
+  const { tab: rawTab, floor: rawFloor } = await searchParams;
   const tab = TABS.some((t) => t.id === rawTab) ? rawTab! : "overview";
   const user = await getSession();
   if (!user) redirect("/login");
@@ -132,6 +132,10 @@ export default async function BuildingPage({
   const photoMsg = photoPolicyMessage(building.photoPolicy);
   const reasons = compliance.reasons.length ? compliance.reasons : parseJson<string[]>(building.complianceReasons, []);
   const href = (t: string) => `/buildings/${building.id}${t === "overview" ? "" : `?tab=${t}`}`;
+  const activeFloorId = tab === "spaces" && building.floors.some((floor) => floor.id === rawFloor) ? rawFloor! : "all";
+  const activeFloor = activeFloorId === "all" ? null : building.floors.find((floor) => floor.id === activeFloorId)!;
+  const visibleAreas = activeFloor ? building.areas.filter((area) => area.floorId === activeFloor.id) : building.areas;
+  const spacesHref = (floorId?: string) => `/buildings/${building.id}?tab=spaces${floorId ? `&floor=${encodeURIComponent(floorId)}` : ""}`;
 
   return (
     <div>
@@ -364,26 +368,31 @@ export default async function BuildingPage({
         )}
 
         {tab === "spaces" && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-3">
-              <div className="font-display font-semibold">Floors</div>
-              {!user.isClient && <FloorEditor buildingId={building.id} />}
-              {building.floors.map((f) => (
-                <Panel key={f.id} className="p-4">
-                  <div className="font-medium">{f.name} <span className="text-xs text-ink-3">level {f.level}</span></div>
-                  <div className="text-xs text-ink-3">{f.occupancy || "—"} · {f.squareFootage ? `${f.squareFootage.toLocaleString()} SF` : "SF not set"}</div>
-                  <div className="mt-2 text-xs text-ink-2">
-                    {f.areas.length ? <>Functional areas: {f.areas.map((area) => area.faCode ? `${area.faCode} · ${area.name}` : area.name).join(", ")}</> : "No functional areas assigned"}
-                  </div>
-                  {!user.isClient && <div className="mt-2"><FloorEditor buildingId={building.id} floor={f} /></div>}
-                  {!user.isClient && <form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={f.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form>}
-                </Panel>
+          <div className="space-y-4">
+            <div>
+              <div className="font-display font-semibold">Floors &amp; functional areas</div>
+              <p className="mt-1 text-sm text-ink-3">Choose a floor to focus on its assigned functional areas, or use All to review every area.</p>
+            </div>
+            <div className="flex gap-1 overflow-x-auto border-b border-[rgba(16,36,72,0.08)]" aria-label="Floor tabs">
+              <Link href={spacesHref()} className={cn("bldg-tab", activeFloorId === "all" && "active")}>All <span className="ml-1 text-xs text-ink-3">{building.areas.length}</span></Link>
+              {building.floors.map((floor) => (
+                <Link key={floor.id} href={spacesHref(floor.id)} className={cn("bldg-tab", activeFloorId === floor.id && "active")}>
+                  {floor.name} <span className="ml-1 text-xs text-ink-3">{floor.areas.length}</span>
+                </Link>
               ))}
             </div>
+            {activeFloor && (
+              <Panel className="p-4">
+                <div className="font-medium">{activeFloor.name} <span className="text-xs text-ink-3">level {activeFloor.level}</span></div>
+                <div className="text-xs text-ink-3">{activeFloor.occupancy || "—"} · {activeFloor.squareFootage ? `${activeFloor.squareFootage.toLocaleString()} SF` : "SF not set"}</div>
+                {!user.isClient && <div className="mt-2"><FloorEditor buildingId={building.id} floor={activeFloor} /></div>}
+                {!user.isClient && <form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={activeFloor.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form>}
+              </Panel>
+            )}
+            {!user.isClient && <div className="flex flex-wrap gap-3"><FloorEditor buildingId={building.id} /><FunctionalAreaEditor buildingId={building.id} floors={building.floors} /></div>}
             <div className="space-y-3">
-              <div className="font-display font-semibold">Functional areas / rooms</div>
-              {!user.isClient && <FunctionalAreaEditor buildingId={building.id} floors={building.floors} />}
-              {building.areas.map((a) => (
+              <div className="font-display font-semibold">{activeFloor ? `${activeFloor.name} functional areas / rooms` : "All functional areas / rooms"}</div>
+              {visibleAreas.map((a) => (
                 <Panel key={a.id} className="p-4">
                   <div className="font-medium">{a.faCode ? `${a.faCode} · ` : ""}{a.name}</div>
                   <div className="text-xs text-ink-3">{a.areaType?.replaceAll("_", " ")} · {building.floors.find((f) => f.id === a.floorId)?.name || "No floor"}</div>
@@ -401,6 +410,7 @@ export default async function BuildingPage({
                   {!user.isClient && <form action={deleteFunctionalArea} className="mt-2"><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form>}
                 </Panel>
               ))}
+              {!visibleAreas.length && <p className="text-sm text-ink-3">No functional areas are assigned to {activeFloor ? activeFloor.name : "this building"}.</p>}
             </div>
           </div>
         )}
