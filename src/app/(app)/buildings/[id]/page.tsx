@@ -81,7 +81,7 @@ export default async function BuildingPage({
   if (!buildingRecord || !assertBuildingAccess(user, buildingRecord)) notFound();
   const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, samples, inspections, activities, documents, photos, floorPlans] = await Promise.all([
     db.buildingFloor.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { level: "asc" }, include: { areas: true } }),
-    db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floorRec: { select: { name: true } } } }),
+    db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } }),
     db.paintSample.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { sampleNumber: "asc" } }),
     db.buildingPpe.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { item: "asc" } }),
     db.inventoryItem.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { inventoryCode: "asc" } }),

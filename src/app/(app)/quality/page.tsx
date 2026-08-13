@@ -18,7 +18,7 @@ export default async function DataQualityPage() {
     db.inventoryItem.findMany({ where: { ...scope, floor: null }, include: { building: true }, take: 200, orderBy: { updatedAt: "desc" } }),
     db.sample.findMany({ where: { ...scope, inventoryLinks: { none: {} } }, include: { building: true }, take: 200, orderBy: { collectionDate: "desc" } }),
     db.inventoryItem.groupBy({ by: ["organizationId", "internalCode"], where: { ...scope, internalCode: { not: null } }, _count: { _all: true }, having: { internalCode: { _count: { gt: 1 } } }, take: 50 }),
-    db.buildingArea.findMany({ where: { building: { organizationId: user.organizationId } }, include: { floorRec: { select: { name: true } } }, orderBy: { name: "asc" } }),
+    db.buildingArea.findMany({ where: { building: { organizationId: user.organizationId } }, include: { floor: { select: { name: true } } }, orderBy: { name: "asc" } }),
   ]);
   const Block = ({ title, children }: { title: string; children: React.ReactNode }) => <Panel className="p-5"><SectionTitle>{title}</SectionTitle><div className="space-y-2">{children}</div></Panel>;
   return <div>

@@ -38,7 +38,7 @@ export default async function InventoryDetail({
   const item = await db.inventoryItem.findFirst({
     where: { id, organizationId: user.organizationId, ...(user.clientId ? { clientId: user.clientId } : {}) },
     include: {
-      building: { include: { client: true, facility: true, areas: { orderBy: { name: "asc" }, include: { floorRec: { select: { name: true } } } } } },
+      building: { include: { client: true, facility: true, areas: { orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } } } },
       homogeneousArea: true,
       quantityHistory: { orderBy: { changedAt: "asc" } },
       conditionHistory: { orderBy: { changedAt: "asc" } },
