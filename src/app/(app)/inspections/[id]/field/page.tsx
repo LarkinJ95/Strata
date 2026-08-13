@@ -1,10 +1,34 @@
 import { notFound, redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { FieldInspection } from "@/components/forms/field-inspection";
 import { photoPolicyMessage } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+type FieldItemRow = {
+  id: string;
+  inventoryId: string;
+  code: string;
+  material: string;
+  floor: string | null;
+  room: string | null;
+  location: string | null;
+  qty: number | null;
+  unit: string;
+  acm: string;
+  previousCondition: string | null;
+  currentCondition: string | null;
+  previousLabel: string | null;
+  currentLabel: string | null;
+  notes: string | null;
+  quantityObserved: number | null;
+  materialRemoved: boolean | number;
+  removedQuantity: number | null;
+  inspected: boolean | number;
+  photo: string | null;
+};
 
 export default async function FieldPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,10 +38,47 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
     where: { id, organizationId: user.organizationId },
     include: {
       building: { include: { client: true } },
-      items: { include: { inventoryItem: { include: { photoLinks: { where: { primaryPhoto: true }, include: { photo: true } } } } }, orderBy: { id: "asc" } },
     },
   });
   if (!insp) notFound();
+
+  // Do not use nested Prisma relation includes here. A large building can have
+  // more than D1's safe number of relation parameters, which made field mode
+  // fail after the inspection was successfully created.
+  const items = await db.$queryRaw<FieldItemRow[]>(Prisma.sql`
+    SELECT
+      ii."id" AS "id",
+      ii."inventoryItemId" AS "inventoryId",
+      ii."previousCondition" AS "previousCondition",
+      ii."currentCondition" AS "currentCondition",
+      ii."previousLabel" AS "previousLabel",
+      ii."currentLabel" AS "currentLabel",
+      ii."notes" AS "notes",
+      ii."quantityObserved" AS "quantityObserved",
+      ii."materialRemoved" AS "materialRemoved",
+      ii."removedQuantity" AS "removedQuantity",
+      ii."inspected" AS "inspected",
+      inv."inventoryCode" AS "code",
+      inv."materialDescription" AS "material",
+      inv."floor" AS "floor",
+      inv."room" AS "room",
+      inv."specificLocation" AS "location",
+      inv."currentQuantity" AS "qty",
+      inv."quantityUnit" AS "unit",
+      inv."acmClassification" AS "acm",
+      (
+        SELECT photo."storageKey"
+        FROM "PhotoLink" link
+        INNER JOIN "Photo" photo ON photo."id" = link."photoId"
+        WHERE link."inventoryItemId" = inv."id" AND link."primaryPhoto" = 1
+        ORDER BY photo."uploadedAt" DESC
+        LIMIT 1
+      ) AS "photo"
+    FROM "InspectionItem" ii
+    INNER JOIN "InventoryItem" inv ON inv."id" = ii."inventoryItemId"
+    WHERE ii."inspectionId" = ${id}
+    ORDER BY ii."id" ASC
+  `);
 
   return (
     <FieldInspection
@@ -31,28 +92,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         client: insp.building.client.name,
       }}
       completion={insp.completionPct}
-      items={insp.items.map((it) => ({
-        id: it.id,
-        inventoryId: it.inventoryItemId,
-        code: it.inventoryItem.inventoryCode,
-        material: it.inventoryItem.materialDescription,
-        floor: it.inventoryItem.floor,
-        room: it.inventoryItem.room,
-        location: it.inventoryItem.specificLocation,
-        qty: it.inventoryItem.currentQuantity,
-        unit: it.inventoryItem.quantityUnit,
-        acm: it.inventoryItem.acmClassification,
-        previousCondition: it.previousCondition,
-        currentCondition: it.currentCondition,
-        previousLabel: it.previousLabel,
-        currentLabel: it.currentLabel,
-        notes: it.notes,
-        quantityObserved: it.quantityObserved,
-        materialRemoved: it.materialRemoved,
-        removedQuantity: it.removedQuantity,
-        inspected: it.inspected,
-        photo: it.inventoryItem.photoLinks[0]?.photo.storageKey ?? null,
-      }))}
+      items={items.map((item) => ({ ...item, materialRemoved: Boolean(item.materialRemoved), inspected: Boolean(item.inspected) }))}
     />
   );
 }
