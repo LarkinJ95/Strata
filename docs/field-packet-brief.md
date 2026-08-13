@@ -25,10 +25,14 @@ Condition | Labeling | Item # | Sample # | Status | Location Description | Mater
 grouped into **First Floor** (36 items) and **Basement** (79 items) — 115 items total, 81 sampled,
 33 PACM, 1 removed.
 
-**Keep — two boxes, not nine.** Condition and Labeling are each a *single* box. The inspector ticks it when
-the material is fine and writes into it when it isn't. Do not replace this with one pre-printed box per
-condition value; seven boxes would consume ~70 pt of every row, which is width the Location Description
-needs far more.
+**Keep — two write-in cells, not nine boxes.** Condition and Labeling are each a *single* cell. The inspector
+ticks it when the material is fine and writes into it when it isn't. Do not replace this with one pre-printed
+box per condition value; seven boxes would consume ~70 pt of every row, which is width the Location
+Description needs far more.
+
+**Do not draw a box inside the cell.** The table already rules every cell — a printed checkbox is a second
+border around the same space. The cell *is* the box. Give the two write-in columns a 1 pt rule (heavier than
+the 0.5 pt body rules) and keep them white through the zebra banding so they read as fields.
 
 **Keep — field corrections written on the sheet.** The marked-up 2026 copy carries "Remove Same as #10"
 across item 112, hood numbers beside Lab 37, "above ceiling" on the Mag TSI run, "B-31" correcting a room
@@ -94,15 +98,48 @@ field. PPE, the designated person, and open repairs aren't in the packet at all.
 
 ## P1 — Page geometry
 
-Landscape Letter (792 × 612 pt), 22 pt margins → 748 × 568 pt printable. **One full-width table**, not
-multiple columns — the 1707 descriptions run to 82 characters
+**One full-width table**, not multiple columns — the 1707 descriptions run to 82 characters
 ("Mechanical Room, near staircase, outside double doors, 1 in elbow, Condensate Line") and multi-column
 layouts truncate them.
 
+### Portrait is the default; landscape is an option
+
+Turning the sheet costs 180 pt of width and buys 180 pt of height. Row count scales with height and column
+widths scale with width, so **portrait holds 36% more rows per page**:
+
+| | Landscape Letter | **Portrait Letter** |
+|---|---|---|
+| Printable (22 pt margins) | 748 × 568 pt | 568 × 748 pt |
+| Rows per full page | 42 | **57** |
+| Rows on page 1 (under the band) | 30 | **41** |
+| Capacity in 3 pages | 114 | **155** |
+| Location Description | 200 pt | 170 pt |
+| Field notes | 150 pt | 104 pt |
+| 1707 (115 items) | 3 pages, full | **3 pages, 26% spare** |
+
+Portrait also fits a standard clipboard without turning the sheet, and files, scans and photocopies
+alongside the rest of the WPS procedure, which is portrait. The 1707 checklist carried today is already
+portrait paper with the table rotated onto it sideways.
+
+Four cuts pay for the 180 pt, and three are improvements on their own:
+
+1. **Drop the Status column** (−38 pt). It reads `Existing` on 114 of 115 rows. Removed items get a grey
+   band and a struck description instead — more visible than the word was.
+2. **Merge Est. Quantity and UOM** into one cell (−18 pt): `1,155 SqFt`. They were never two decisions.
+3. **Strip the constant sample prefix** into the group header (−24 pt): `117A` under a header reading
+   `sample prefix 1707-`, not `1707-117A` on every row.
+4. **Trim the notes lane** 150 → 104 pt. The only genuine loss; 104 pt still holds "room is B-31 not B-33"
+   at handwriting size.
+
+Implement both orientations from one geometry table keyed by `paper` + `orientation`; `layoutRows()` reads
+the widths and row count from it and is otherwise identical.
+
+### Landscape Letter (792 × 612 pt)
+
 | column | width | notes |
 |---|---|---|
-| Condition | 26 pt | single box, centred |
-| Labeling | 26 pt | single box, centred |
+| Condition | 26 pt | write-in cell, centred, no drawn box, always white |
+| Labeling | 26 pt | write-in cell, centred, no drawn box, always white |
 | Item # | 24 pt | mono bold |
 | Sample # | 58 pt | `1707-117A` or `PACM` |
 | Status | 38 pt | Existing / Removed |
@@ -119,7 +156,30 @@ page header  22 pt  ·  page footer 14 pt
 brief band   150 pt, page 1 only
 ```
 
-Rows per page: **33** on page 1 (under the band), **41** on pages 2–3.
+Rows per page: **30** on page 1 (under the band), **42** on pages 2–3.
+
+### Portrait Letter (612 × 792 pt)
+
+| column | width | notes |
+|---|---|---|
+| Condition | 24 pt | write-in cell, no drawn box, always white |
+| Labeling | 24 pt | write-in cell, no drawn box, always white |
+| Item # | 20 pt | mono bold |
+| Sample # | 34 pt | prefix stripped to the group header |
+| **Location Description** | **170 pt** | wraps to a second line when it overruns |
+| Material Identification | 96 pt | |
+| Est. Quantity | 54 pt | quantity and UOM in one cell |
+| **Field notes · corrections** | **104 pt** | ruled, blank |
+
+Brief band 200 pt (two columns, with the code key as a full-width strip beneath them).
+Rows per page: **41** on page 1, **57** on pages 2–3.
+
+### Long descriptions wrap; they never truncate
+
+A 200 pt column at 7 pt Helvetica holds roughly 57 characters. Eight or nine 1707 rows exceed that — the
+longest is 82 characters. Rows must grow to a second line when the description overruns, at roughly a
+half-row of cost each (~5 rows across 1707), which the portrait budget absorbs. Truncating a location
+description is not an option: it is the sentence that tells the inspector where to stand.
 
 ---
 
@@ -129,7 +189,7 @@ A single box per column only works if the vocabulary is printed on the same shee
 right-hand third of the brief band, and derive the labels from `CONDITION_LABELS` so the paper and the
 database can't drift.
 
-### Condition — write one code in the box
+### Condition — write one code in the cell
 
 | code | value stored | printed gloss |
 |---|---|---|
@@ -141,7 +201,7 @@ database can't drift.
 | `X` | `removed` | Removed — no longer present |
 | `N` | `inaccessible` | Not accessed — say why in Notes |
 
-### Labeling — write one code in the box
+### Labeling — write one code in the cell
 
 | code | value stored | printed gloss |
 |---|---|---|
@@ -157,14 +217,14 @@ database can't drift.
 ### The rule printed under the key
 
 > **Any code other than ✓ requires a note.** Where photography is permitted, photograph D, S, R and X
-> before leaving the location. Leave a row blank only if you did not reach it — a blank row is recorded as
+> before leaving the location. Leave a cell blank only if you did not reach it — a blank cell is recorded as
 > **not inspected**, not as good.
 
 ### Transcription rules (these are the reason the key exists)
 
 1. `✓` resolves to the material's **previous condition**, not to `good`. On a material last recorded as
    Fair, a tick means still Fair.
-2. A blank box is `inspected: false`. Never infer good.
+2. A blank cell is `inspected: false`. Never infer good.
 3. `X` sets `InventoryItem.recordStatus = "removed"` and prompts for a `RemovalEvent`.
 4. `N` requires the Notes text; block the transcription row until it's present.
 5. An ambiguous or unreadable mark is flagged for review, never guessed.
@@ -261,6 +321,7 @@ half-day visit.
 ```ts
 type PacketOptions = {
   paper: "letter" | "legal" | "a4" | "a3";
+  orientation: "portrait" | "landscape";   // portrait is the default
   density: "standard" | "compact";
   nestLayers: boolean;
   groupRepeated: boolean;
@@ -280,10 +341,11 @@ function drawCloseout(doc, ctx)
 `layoutRows` must be pure and unit-testable — it is where the page-count promise lives, and the preview in
 P4 calls the same function so the estimate can never disagree with the PDF.
 
-### Checkboxes must be real rectangles
+### No drawn checkboxes
 
-`doc.rect(x, y, s, s).lineWidth(0.7).stroke()`, not text. Text boxes don't align and don't scale with
-density.
+The write-in cells are formed by the table rules themselves — `doc.rect()` for the cell border at 1 pt, and
+nothing inside it. Do not emit `[ ]` as text (the current generator does) and do not draw a second rectangle
+inside a ruled cell.
 
 ### Fonts
 
@@ -303,12 +365,16 @@ per packet for no field benefit. Helvetica-Bold for item numbers, group headers 
 ## Acceptance criteria
 
 - Building 1707 (115 items, 36 first floor / 79 basement) prints on **3 pages** at standard density on
-  Letter landscape with layer nesting on, and the preview shows "3 pages" before generating.
+  **portrait** Letter with layer nesting on, and the preview shows "3 pages" before generating. The same
+  inventory also fits 3 pages in landscape, with no spare capacity.
 - The code key appears on page 1, every code maps to a value in `CONDITION_LABELS` or the label states, and
   the key's glosses are derived from those maps rather than hardcoded twice.
-- No Location Description is truncated at 200 pt for the 1707 inventory; the longest
-  ("Mechanical Room, near staircase, outside double doors, 1 in elbow, Condensate Line") fits.
-- Every row has a blank Field notes cell of at least 150 pt.
+- No checkbox glyph or drawn box appears inside any table cell; the Condition and Labeling cells are empty,
+  white, and bounded only by the table rules.
+- No Location Description is ever truncated in either orientation; rows that overrun the column wrap to a
+  second line, and the longest 1707 description
+  ("Mechanical Room, near staircase, outside double doors, 1 in elbow, Condensate Line") renders in full.
+- Every row has a blank Field notes cell — at least 104 pt portrait, 150 pt landscape.
 - Layer rows appear indented under their parent, with the parent's quantity shown once.
 - Every page identifies its building, page number and item range in the footer.
 - No building name appears in a `RegExp` anywhere in `packet-pdf.ts`.
