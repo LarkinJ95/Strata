@@ -1,4 +1,7 @@
-import PDFDocument from "pdfkit";
+// The standalone build carries its font data in-memory and does not depend on
+// Node's filesystem, which makes it safe in the Cloudflare Worker runtime.
+// @ts-expect-error PDFKit does not publish types for its standalone entrypoint.
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { ACM_LABELS, CONDITION_LABELS, formatDate, formatQty } from "@/lib/utils";
 import { canReadStorageKey, getStoredObject } from "@/lib/storage";
 
