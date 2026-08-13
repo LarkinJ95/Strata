@@ -27,6 +27,7 @@ import { DocumentUpload } from "@/components/forms/document-upload";
 import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
 import { AccessField } from "@/components/forms/access-field";
 import { deleteDocument, deletePhoto, deleteFloor, deleteFunctionalArea, deletePaintSample } from "@/actions/records";
+import { useDocumentAsFloorPlan } from "@/actions/floor-plan";
 import {
   BuildingEditor,
   FloorEditor,
@@ -53,6 +54,7 @@ const TABS = [
   { id: "inspections", label: "Inspections", icon: ClipboardCheck },
   { id: "photos", label: "Photos", icon: Camera },
   { id: "documents", label: "Documents", icon: FileText },
+  { id: "plans", label: "Floor Plans", icon: MapPin },
   { id: "activity", label: "Activity", icon: Activity },
 ] as const;
 
@@ -187,7 +189,7 @@ export default async function BuildingPage({
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
-            <Link key={t.id} href={href(t.id)} className={cn("bldg-tab", tab === t.id && "active")}>
+            <Link key={t.id} href={t.id === "plans" ? `/buildings/${building.id}/plans` : href(t.id)} className={cn("bldg-tab", tab === t.id && "active")}>
               <Icon size={14} />
               {t.label}
             </Link>
@@ -507,19 +509,34 @@ export default async function BuildingPage({
               </Panel>
             )}
             <Panel className="p-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="font-display text-[15px] font-semibold">Documents</div>
+                  <p className="mt-1 text-xs text-ink-3">Use a drawing or floor plan below for interactive inventory mapping.</p>
+                </div>
+                <Link href={`/buildings/${building.id}/plans`} className="btn btn-ghost text-xs">Open Floor Plans</Link>
+              </div>
               {building.documents.map((d) => (
                 <div key={d.id} className="mb-3 flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-paper-2">
                   <a href={fileUrl(d.storageKey)} className="min-w-0 flex-1">
                     <div className="font-medium">{d.name}</div>
                     <div className="text-xs text-ink-3">{d.docType.replaceAll("_", " ")} · rev {d.revision} · {formatDate(d.documentDate)}</div>
                   </a>
-                  {!user.isClient && (
-                    <form action={deleteDocument}>
-                      <AccessField />
-                      <input type="hidden" name="id" value={d.id} />
-                      <ConfirmDeleteButton label="Delete" message="Delete this document permanently?" />
-                    </form>
-                  )}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {d.docType === "drawing" && can(user, "documents.upload") && (
+                      <form action={useDocumentAsFloorPlan}>
+                        <input type="hidden" name="documentId" value={d.id} />
+                        <button className="btn btn-ghost text-xs">Map on floor plan</button>
+                      </form>
+                    )}
+                    {!user.isClient && (
+                      <form action={deleteDocument}>
+                        <AccessField />
+                        <input type="hidden" name="id" value={d.id} />
+                        <ConfirmDeleteButton label="Delete" message="Delete this document permanently?" />
+                      </form>
+                    )}
+                  </div>
                 </div>
               ))}
               {building.floorPlans.map((fp) => (

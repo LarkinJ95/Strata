@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { assertBuildingAccess, can, getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { putUpload } from "@/lib/storage";
@@ -44,6 +45,39 @@ export async function uploadFloorPlan(formData: FormData) {
   revalidatePath(`/buildings/${buildingId}/plans`);
   revalidatePath(`/buildings/${buildingId}/packet`);
   return { ok: true };
+}
+
+/** Enables mapping for an existing building document without uploading it again. */
+export async function useDocumentAsFloorPlan(formData: FormData) {
+  const user = await getSession();
+  if (!user) throw new Error("Sign in required");
+  if (!can(user, "documents.upload")) throw new Error("Not allowed to manage floor plans");
+  const documentId = String(formData.get("documentId") || "");
+  const document = await db.document.findFirst({
+    where: { id: documentId, organizationId: user.organizationId, docType: "drawing" },
+    include: { building: true },
+  });
+  if (!document?.building || !assertBuildingAccess(user, document.building)) throw new Error("Drawing document not found");
+
+  const existing = await db.floorPlan.findFirst({ where: { buildingId: document.buildingId!, storageKey: document.storageKey } });
+  const plan = existing ?? await db.floorPlan.create({
+    data: {
+      organizationId: user.organizationId,
+      buildingId: document.buildingId!,
+      name: document.name,
+      storageKey: document.storageKey,
+      mimeType: document.mimeType,
+      originalFilename: document.originalFilename,
+      notes: document.description,
+    },
+  });
+  if (!existing) {
+    await activity({ user, organizationId: user.organizationId, clientId: document.clientId, buildingId: document.buildingId!, eventType: "document", title: "Floor plan enabled", detail: plan.name });
+    await audit({ user, action: "floor_plan.promote_document", recordType: "floor_plan", recordId: plan.id, newValue: { documentId: document.id } });
+  }
+  revalidatePath(`/buildings/${document.buildingId}`);
+  revalidatePath(`/buildings/${document.buildingId}/plans`);
+  redirect(`/buildings/${document.buildingId}/plans`);
 }
 
 export async function placeFloorPlanMarker(input: { floorPlanId: string; inventoryItemId: string; x: number; y: number }) {
