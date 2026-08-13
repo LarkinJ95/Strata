@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSession, buildingWhere } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 import { PageHeader, Panel } from "@/components/ui/primitives";
 
 export const dynamic = "force-dynamic";
@@ -20,24 +19,16 @@ const REPORTS = [
 export default async function ReportsPage() {
   const user = await getSession();
   if (!user) redirect("/login");
-  const buildings = await db.building.findMany({ where: buildingWhere(user), orderBy: { buildingNumber: "asc" } });
 
   return (
     <div>
-      <PageHeader kicker="Branded output" title="Reports" description="Professional print layouts — not browser chrome. Choose a building, then generate." />
+      <PageHeader kicker="Branded output" title="Reports" description="Choose a report first, then select its scope in the report view." />
       <div className="grid gap-4 md:grid-cols-2">
         {REPORTS.map((r) => (
           <Panel key={r.href} className="p-5">
             <div className="font-display text-lg font-semibold">{r.title}</div>
             <p className="mt-1 text-sm text-ink-3">{r.body}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {buildings.map((b) => (
-                <Link key={b.id} href={`${r.href}?building=${b.id}`} className="btn btn-ghost text-xs">
-                  {b.buildingNumber}
-                </Link>
-              ))}
-              <Link href={r.href} className="btn btn-primary text-xs">All in scope</Link>
-            </div>
+            <Link href={r.href} className="btn btn-primary mt-3 text-xs">Choose scope</Link>
           </Panel>
         ))}
       </div>

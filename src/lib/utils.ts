@@ -175,6 +175,29 @@ export function conditionTone(c: string) {
   return "muted";
 }
 
+/** A consistent, explainable triage score for inventory views and summaries. */
+export function riskScore(item: {
+  acmClassification: string;
+  condition: string;
+  accessibility?: string | null;
+  disturbancePotential?: string | null;
+  friable?: string | null;
+}): number {
+  const classification = { confirmed_acm: 45, assumed_acm: 36, pacm: 28, unknown: 16, non_acm: 0, removed: 0 }[item.acmClassification] ?? 12;
+  const condition = { significantly_damaged: 42, damaged: 32, needs_repair: 27, fair: 15, good: 4, inaccessible: 12, unable_to_inspect: 12, removed: 0 }[item.condition] ?? 10;
+  const accessible = /high|public|occupied|unrestricted/i.test(item.accessibility ?? "") ? 7 : /medium/i.test(item.accessibility ?? "") ? 4 : 0;
+  const disturbance = /high/i.test(item.disturbancePotential ?? "") ? 6 : /medium/i.test(item.disturbancePotential ?? "") ? 3 : 0;
+  const friable = /friable|yes/i.test(item.friable ?? "") ? 5 : 0;
+  return Math.max(0, Math.min(100, classification + condition + accessible + disturbance + friable));
+}
+
+export function riskTone(score: number): "danger" | "warn" | "info" | "muted" {
+  if (score >= 65) return "danger";
+  if (score >= 40) return "warn";
+  if (score >= 15) return "info";
+  return "muted";
+}
+
 export function complianceTone(s: string) {
   if (s === "current") return "ok";
   if (s === "attention") return "warn";

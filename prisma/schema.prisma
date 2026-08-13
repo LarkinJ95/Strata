@@ -46,6 +46,7 @@ model Organization {
   floorPlans      FloorPlan[]
   signatures      Signature[]
   reports         GeneratedReport[]
+  managementPlans ManagementPlan[]
   acknowledgements ContractorAcknowledgement[]
   importJobs      ImportJob[]
   notifications_pref NotificationPreference[]
@@ -263,6 +264,7 @@ model Building {
   chainsOfCustody  ChainOfCustody[]
   paintSamples     PaintSample[]
   ppeRequirements  BuildingPpe[]
+  managementPlans  ManagementPlan[]
 
   @@unique([organizationId, clientId, buildingNumber])
   @@index([organizationId, facilityId])
@@ -284,6 +286,34 @@ model BuildingFloor {
   paintSamples PaintSample[]
 
   @@index([buildingId])
+}
+
+model ManagementPlan {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  buildingId          String
+  revision            Int      @default(1)
+  status              String   @default("draft")
+  effectiveDate       DateTime?
+  reviewDueDate       DateTime?
+  preparedBy          String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  responsiblePerson   String?
+  responseProcedures  String?
+  emergencyProcedures String?
+  trainingNotes       String?
+  notificationNotes   String?
+  additionalNotes     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@unique([buildingId, revision])
+  @@index([organizationId, buildingId])
+  @@index([reviewDueDate])
 }
 
 model BuildingArea {

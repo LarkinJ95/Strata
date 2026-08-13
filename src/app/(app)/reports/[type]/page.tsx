@@ -5,6 +5,7 @@ import { AcmChip, ConditionChip } from "@/components/ui/primitives";
 import { formatDate, formatQty } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { PrintButton } from "@/components/forms/print-button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function ReportPage({
   const sp = await searchParams;
   const user = await getSession();
   if (!user) redirect("/login");
+  const selectableBuildings = await db.building.findMany({ where: buildingWhere(user), select: { id: true, buildingNumber: true, name: true }, orderBy: { buildingNumber: "asc" } });
   const scope = { ...buildingWhere(user), ...(sp.building ? { id: sp.building } : {}) };
   const org = await db.organization.findUnique({ where: { id: user.organizationId } });
   const buildings = await db.building.findMany({
@@ -28,6 +30,7 @@ export default async function ReportPage({
       facility: true,
       inventoryItems: { include: { photoLinks: { where: { primaryPhoto: true }, include: { photo: true } }, sampleLinks: { include: { sample: true } } } },
       repairs: { include: { inventoryItem: true } },
+      managementPlans: { orderBy: { revision: "desc" }, take: 1 },
       samples: { include: { layers: { include: { result: true } } } },
       inspections: { include: { inspector: true }, orderBy: { scheduledDate: "desc" }, take: 5 },
       removals: { include: { inventoryItem: true } },
@@ -41,6 +44,8 @@ export default async function ReportPage({
   return (
     <div className="mx-auto max-w-5xl bg-white p-8 print:p-0">
       <div className="no-print mb-4 flex justify-end gap-2">
+        <Link href={`/reports/${type}`} className={`btn btn-ghost text-xs ${!sp.building ? "ring-2 ring-teal/20" : ""}`}>All in scope</Link>
+        {selectableBuildings.map((building) => <Link key={building.id} href={`/reports/${type}?building=${building.id}`} className={`btn btn-ghost text-xs ${sp.building === building.id ? "ring-2 ring-teal/20" : ""}`}>{building.buildingNumber}</Link>)}
         <PrintButton />
       </div>
       <header className="border-b border-[rgba(16,36,72,0.12)] pb-4">
@@ -130,8 +135,14 @@ export default async function ReportPage({
 
           {type === "management-plan" && (
             <div className="mt-3 text-sm leading-6">
-              <p>Responsible environmental manager: Northline Environmental. Inspection interval: {b.inspectionIntervalDays} days.</p>
-              <p>This plan compiles the current inventory, supporting samples, inspection history, and response actions. Prior revisions are retained.</p>
+              {b.managementPlans[0] ? <>
+                <p>Revision {b.managementPlans[0].revision} · {b.managementPlans[0].status} · effective {formatDate(b.managementPlans[0].effectiveDate)} · review due {formatDate(b.managementPlans[0].reviewDueDate)}.</p>
+                <p>Responsible person: {b.managementPlans[0].responsiblePerson || "Not recorded"}. Prepared by: {b.managementPlans[0].preparedBy || "Not recorded"}. Approved by: {b.managementPlans[0].approvedBy || "Not recorded"}.</p>
+                {b.managementPlans[0].responseProcedures && <p><strong>Response actions:</strong> {b.managementPlans[0].responseProcedures}</p>}
+                {b.managementPlans[0].emergencyProcedures && <p><strong>Emergency procedures:</strong> {b.managementPlans[0].emergencyProcedures}</p>}
+                {b.managementPlans[0].trainingNotes && <p><strong>Training and communication:</strong> {b.managementPlans[0].trainingNotes}</p>}
+                {b.managementPlans[0].notificationNotes && <p><strong>Notifications and records:</strong> {b.managementPlans[0].notificationNotes}</p>}
+              </> : <p>No structured management plan has been created for this building. This package contains the current live inventory and related records only.</p>}
             </div>
           )}
         </section>

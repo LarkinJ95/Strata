@@ -39,6 +39,7 @@ export default async function InventoryDetail({
     where: { id, organizationId: user.organizationId, ...(user.clientId ? { clientId: user.clientId } : {}) },
     include: {
       building: { include: { client: true, facility: true, areas: { orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } } } },
+      functionalArea: { select: { id: true, name: true, faCode: true } },
       homogeneousArea: true,
       quantityHistory: { orderBy: { changedAt: "asc" } },
       conditionHistory: { orderBy: { changedAt: "asc" } },
@@ -53,8 +54,6 @@ export default async function InventoryDetail({
     },
   });
   if (!item) notFound();
-  const areaRows = await db.$queryRawUnsafe<Array<{ functionalAreaId: string | null }>>('SELECT "functionalAreaId" FROM "InventoryItem" WHERE "id" = ?', item.id);
-  const itemWithArea = { ...item, functionalAreaId: areaRows[0]?.functionalAreaId ?? null };
 
   const samplesForLink = !user.isClient ? await db.sample.findMany({ where: { organizationId: user.organizationId, buildingId: item.buildingId }, select: { id: true, sampleNumber: true, material: true }, orderBy: { sampleNumber: "asc" } }) : [];
 
@@ -82,7 +81,7 @@ export default async function InventoryDetail({
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      {section !== "documents" && <div className={`grid gap-6 ${section === "status" || section === "history" ? "xl:grid-cols-[1.1fr_0.9fr]" : "grid-cols-1"}`}>
         <div className="space-y-6">
           {section === "status" && <Panel className="p-5">
             <SectionTitle>Current status</SectionTitle>
@@ -174,7 +173,7 @@ export default async function InventoryDetail({
           {section === "status" && !user.isClient && (
             <Panel className="p-5">
               <SectionTitle>Edit all inventory details</SectionTitle>
-              <InventoryEditor buildingId={item.buildingId} item={itemWithArea} areas={item.building.areas} />
+              <InventoryEditor buildingId={item.buildingId} item={item} areas={item.building.areas} />
             </Panel>
           )}
 
@@ -236,7 +235,7 @@ export default async function InventoryDetail({
             ))}
           </Panel>}
         </div>
-      </div>
+      </div>}
 
       {section === "documents" && (
         <Panel className="p-5">

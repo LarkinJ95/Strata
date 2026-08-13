@@ -70,12 +70,16 @@ export function Kpi({
   label,
   value,
   hint,
+  delta,
+  series,
   tone,
   href,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
+  delta?: string;
+  series?: number[];
   tone?: "ok" | "warn" | "danger" | "teal" | "ice";
   href?: string;
 }) {
@@ -96,6 +100,7 @@ export function Kpi({
           {hint}
         </div>
       )}
+      {(delta || series?.length) && <div className="mt-2 flex items-end justify-between gap-2"><span className="text-[11px] text-ink-3">{delta}</span>{series?.length ? <svg aria-label="12 week trend" viewBox="0 0 120 24" className="h-6 w-24 text-teal"><polyline fill="none" stroke="currentColor" strokeWidth="2" points={series.map((value, index) => `${(index / Math.max(1, series.length - 1)) * 120},${22 - (value / Math.max(1, ...series)) * 18}`).join(" ")} /></svg> : null}</div>}
     </Panel>
   );
   return href ? <Link href={href}>{inner}</Link> : inner;

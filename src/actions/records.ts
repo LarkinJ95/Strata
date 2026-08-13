@@ -118,10 +118,15 @@ export async function saveBuilding(form: FormData) {
   if (id) {
     const existing = await db.building.findFirst({ where: { id, organizationId: user.organizationId } });
     if (!existing) throw new Error("Building not found");
-    await db.building.update({ where: { id }, data });
+    const requestedFacilityId = str(form, "facilityId") || existing.facilityId;
+    const facility = await db.facility.findFirst({ where: { id: requestedFacilityId, organizationId: user.organizationId, clientId: existing.clientId } });
+    if (!facility) throw new Error("Select a facility assigned to this client");
+    const update = { ...data, facilityId: facility.id };
+    await db.building.update({ where: { id }, data: update });
     await persistBuildingCompliance(id);
-    await audit({ user, action: "building.update", recordType: "building", recordId: id, previousValue: existing, newValue: data });
+    await audit({ user, action: "building.update", recordType: "building", recordId: id, previousValue: existing, newValue: update });
     revalidatePath(`/buildings/${id}`);
+    revalidatePath(`/clients/${existing.clientId}`);
     return;
   }
 
@@ -138,6 +143,48 @@ export async function saveBuilding(form: FormData) {
   });
   revalidatePath(`/clients/${facility.clientId}`);
   redirect(`/buildings/${created.id}`);
+}
+
+export async function saveManagementPlan(form: FormData) {
+  const user = await actor(form);
+  const id = str(form, "id");
+  const buildingId = str(form, "buildingId");
+  const building = await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } });
+  if (!building) throw new Error("Building not found");
+  const status = str(form, "status") || "draft";
+  const data = {
+    status,
+    effectiveDate: dateOrNull(form, "effectiveDate"),
+    reviewDueDate: dateOrNull(form, "reviewDueDate"),
+    preparedBy: str(form, "preparedBy") || null,
+    approvedBy: str(form, "approvedBy") || null,
+    approvedAt: dateOrNull(form, "approvedAt"),
+    responsiblePerson: str(form, "responsiblePerson") || null,
+    responseProcedures: str(form, "responseProcedures") || null,
+    emergencyProcedures: str(form, "emergencyProcedures") || null,
+    trainingNotes: str(form, "trainingNotes") || null,
+    notificationNotes: str(form, "notificationNotes") || null,
+    additionalNotes: str(form, "additionalNotes") || null,
+  };
+  if (status === "approved" && (!data.effectiveDate || !data.reviewDueDate || !data.approvedBy)) {
+    throw new Error("Approved plans require an effective date, review due date, and approver");
+  }
+  const managementPlanStatus = status === "approved" ? (data.reviewDueDate && data.reviewDueDate < new Date() ? "attention" : "current") : status;
+  if (id) {
+    const existing = await db.managementPlan.findFirst({ where: { id, buildingId, organizationId: user.organizationId } });
+    if (!existing) throw new Error("Management plan not found");
+    const plan = await db.managementPlan.update({ where: { id }, data });
+    await db.building.update({ where: { id: buildingId }, data: { managementPlanStatus } });
+    await audit({ user, action: "management_plan.update", recordType: "management_plan", recordId: plan.id, previousValue: existing, newValue: data });
+  } else {
+    const previous = await db.managementPlan.findFirst({ where: { buildingId }, orderBy: { revision: "desc" } });
+    const plan = await db.managementPlan.create({ data: { ...data, organizationId: user.organizationId, buildingId, revision: (previous?.revision ?? 0) + 1 } });
+    await db.building.update({ where: { id: buildingId }, data: { managementPlanStatus } });
+    await audit({ user, action: "management_plan.create", recordType: "management_plan", recordId: plan.id, newValue: data });
+  }
+  await activity({ user, organizationId: user.organizationId, clientId: building.clientId, buildingId, eventType: "management_plan", title: `Management plan ${status}`, detail: data.reviewDueDate ? `Review due ${data.reviewDueDate.toISOString().slice(0, 10)}` : undefined });
+  revalidatePath(`/buildings/${buildingId}`);
+  revalidatePath(`/buildings/${buildingId}/management-plan`);
 }
 
 export async function saveInventory(form: FormData) {

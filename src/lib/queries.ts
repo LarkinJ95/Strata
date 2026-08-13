@@ -84,6 +84,17 @@ export async function dashboardData(user: SessionUser) {
     orderBy: { nextInspectionAt: "asc" },
   });
 
+  const twelveWeeksAgo = new Date(now.getTime() - 84 * 24 * 60 * 60 * 1000);
+  const trendEvents = await db.activityEvent.findMany({
+    where: { organizationId: user.organizationId, ...(user.clientId ? { clientId: user.clientId } : {}), createdAt: { gte: twelveWeeksAgo } },
+    select: { eventType: true, createdAt: true },
+  });
+  const weeklySeries = (types: string[]) => Array.from({ length: 12 }, (_, index) => {
+    const start = new Date(twelveWeeksAgo.getTime() + index * 7 * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return trendEvents.filter((event) => types.includes(event.eventType) && event.createdAt >= start && event.createdAt < end).length;
+  });
+
   return {
     portfolio: { clients, facilities, buildings, inventory, openRepairs },
     action: {
@@ -100,6 +111,7 @@ export async function dashboardData(user: SessionUser) {
     recentActivity,
     recentSamples,
     recentRemovals,
+    trends: { inspections: weeklySeries(["inspection"]), damaged: weeklySeries(["inventory", "condition"]), repairs: weeklySeries(["repair"]), samples: weeklySeries(["sample"]) },
     soon,
   };
 }

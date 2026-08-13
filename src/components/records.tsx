@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AcmChip, ConditionChip, Panel } from "@/components/ui/primitives";
 import { fileUrl } from "@/lib/files";
-import { formatDate, formatQty } from "@/lib/utils";
+import { formatDate, formatQty, parseJson, riskScore, riskTone } from "@/lib/utils";
 
 export function InventoryTable({
   rows,
@@ -10,15 +10,27 @@ export function InventoryTable({
   rows: {
     id: string;
     inventoryCode: string;
+    internalCode?: string | null;
     materialDescription: string;
+    materialCategory?: string;
+    friable?: string | null;
     floor: string | null;
     room: string | null;
     acmClassification: string;
     condition: string;
     currentQuantity: number | null;
     quantityUnit: string;
+    originalQuantity?: number | null;
+    quantityRemoved?: number | null;
+    asbestosPercent?: number | null;
+    fiberTypes?: string;
+    responseAction?: string | null;
+    accessibility?: string | null;
+    disturbancePotential?: string | null;
     isProvisional: boolean;
     building?: { id: string; name: string; buildingNumber: string };
+    functionalArea?: { id: string; name: string; faCode: string | null } | null;
+    inspectionItems?: { inspectedAt: Date | null; inspection: { inspector: { name: string } | null } }[];
   }[];
   showBuilding?: boolean;
 }) {
@@ -27,6 +39,7 @@ export function InventoryTable({
       <table className="data">
         <thead>
           <tr>
+            <th aria-label="Risk" className="w-1 p-0" />
             <th>ID</th>
             <th>Material</th>
             {showBuilding && <th>Building</th>}
@@ -34,18 +47,22 @@ export function InventoryTable({
             <th>Classification</th>
             <th>Condition</th>
             <th>Qty remaining</th>
+            <th>Response</th>
+            <th>Last seen</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
+              <td className={`w-1 p-0 !px-0 ${riskTone(riskScore(r)) === "danger" ? "bg-status-action" : riskTone(riskScore(r)) === "warn" ? "bg-status-attention" : riskTone(riskScore(r)) === "info" ? "bg-teal" : "bg-ink-3"}`} aria-label={`Risk score ${riskScore(r)}`} />
               <td>
                 <Link href={`/inventory/${r.id}`} className="mono-id text-teal-dim">
                   {r.inventoryCode}
                 </Link>
                 {r.isProvisional && <div className="chip chip-warn mt-1">Provisional</div>}
+                {r.internalCode && <div className="mt-0.5 text-[10px] text-ink-3">{r.internalCode}</div>}
               </td>
-              <td className="font-medium">{r.materialDescription}</td>
+              <td><div className="font-medium">{r.materialDescription}</div><div className="mt-0.5 text-[10px] text-ink-3">{r.materialCategory}{r.friable ? ` · ${r.friable}` : ""}</div></td>
               {showBuilding && (
                 <td>
                   {r.building ? (
@@ -58,15 +75,19 @@ export function InventoryTable({
                 </td>
               )}
               <td className="text-ink-2">
-                {[r.floor, r.room].filter(Boolean).join(" · ") || "—"}
+                <div>{[r.floor, r.functionalArea?.name ?? r.room].filter(Boolean).join(" · ") || <i className="text-ink-3">no functional area</i>}</div>
+                {r.room && <div className="mt-0.5 text-[10px] text-ink-3">{r.room}</div>}
               </td>
               <td>
                 <AcmChip value={r.acmClassification} />
+                {r.asbestosPercent != null && <div className="mt-1 text-[10px] text-ink-3">{r.asbestosPercent}% {parseJson<string[]>(r.fiberTypes, []).join(", ")}</div>}
               </td>
               <td>
                 <ConditionChip value={r.condition} />
               </td>
-              <td className="mono-id">{formatQty(r.currentQuantity, r.quantityUnit)}</td>
+              <td className="text-right"><div className="mono-id">{formatQty(r.currentQuantity, r.quantityUnit)}</div>{r.originalQuantity && <div className="mt-1 ml-auto h-1 w-[62px] overflow-hidden rounded bg-paper-2"><div className="h-full bg-teal" style={{ width: `${Math.max(0, Math.min(100, ((r.currentQuantity ?? 0) / r.originalQuantity) * 100))}%` }} /></div>}</td>
+              <td>{r.responseAction ? <span className="chip chip-muted">{r.responseAction}</span> : "—"}</td>
+              <td className="text-xs text-ink-3">{r.inspectionItems?.[0] ? <><div>{formatDate(r.inspectionItems[0].inspectedAt)}</div><div>{r.inspectionItems[0].inspection.inspector?.name ?? "Inspector not recorded"}</div></> : "Not inspected"}</td>
             </tr>
           ))}
         </tbody>

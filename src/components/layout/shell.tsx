@@ -98,8 +98,23 @@ export function AppShell({
             <GlobalSearch />
           </div>
         )}
-        <main className="px-4 py-4 md:px-6">{children}</main>
+        <main className={cn("px-4 py-4 pb-[72px] md:px-6 lg:pb-4", fieldMode && "pb-4")}>{children}</main>
       </div>
+      {!fieldMode && (
+        <nav className="fixed inset-x-0 bottom-0 z-30 flex h-14 border-t border-[rgba(16,36,72,0.08)] bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+          {items.slice(0, 5).map((item) => {
+            const active = path === item.href || path.startsWith(item.href + "/");
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} className={cn("relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-ink-3", active && "text-teal-dim font-semibold")}>
+                {active && <span className="absolute inset-x-2 top-0 h-0.5 rounded-b bg-teal" />}
+                <Icon size={20} />
+                <span className="max-w-full truncate px-1">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

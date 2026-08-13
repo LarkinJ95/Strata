@@ -25,10 +25,10 @@ export default async function DashboardPage() {
       />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Kpi label="Overdue inspections" value={data.action.overdueInspections} tone={data.action.overdueInspections ? "danger" : "ok"} href="/queue" hint="Buildings past next-inspection date" />
-        <Kpi label="Damaged ACM" value={data.action.damagedAcm} tone={data.action.damagedAcm ? "danger" : "ok"} href="/queue" hint="Confirmed / assumed / PACM" />
-        <Kpi label="Overdue repairs" value={data.action.overdueRepairs} tone={data.action.overdueRepairs ? "danger" : "ok"} href="/repairs" />
-        <Kpi label="Unreconciled results" value={data.action.unreconciled} tone={data.action.unreconciled ? "warn" : "ok"} href="/samples/reconcile" />
+        <Kpi label="Overdue inspections" value={data.action.overdueInspections} tone={data.action.overdueInspections ? "danger" : "ok"} href="/queue" hint="Buildings past next-inspection date" delta="12-week inspection activity" series={data.trends.inspections} />
+        <Kpi label="Damaged ACM" value={data.action.damagedAcm} tone={data.action.damagedAcm ? "danger" : "ok"} href="/queue" hint="Confirmed / assumed / PACM" delta="12-week material activity" series={data.trends.damaged} />
+        <Kpi label="Overdue repairs" value={data.action.overdueRepairs} tone={data.action.overdueRepairs ? "danger" : "ok"} href="/repairs" delta="12-week repair activity" series={data.trends.repairs} />
+        <Kpi label="Unreconciled results" value={data.action.unreconciled} tone={data.action.unreconciled ? "warn" : "ok"} href="/samples/reconcile" delta="12-week sample activity" series={data.trends.samples} />
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-4">

@@ -138,8 +138,10 @@ export function FacilityEditor({ clientId, facility }: { clientId: string; facil
 export function BuildingEditor({
   building,
   facilityId,
+  facilities,
 }: {
   facilityId?: string;
+  facilities?: { id: string; name: string; facilityId: string }[];
   building?: {
     id?: string;
     name: string;
@@ -164,10 +166,11 @@ export function BuildingEditor({
       <form action={saveBuilding} className="space-y-3">
         <AccessField />
         {building?.id && <input type="hidden" name="id" value={building.id} />}
-        {facilityId && <input type="hidden" name="facilityId" value={facilityId} />}
-        <Grid>
+        {facilityId && !facilities && <input type="hidden" name="facilityId" value={facilityId} />}
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Name"><input name="name" defaultValue={building?.name} required /></Field>
           <Field label="Building number"><input name="buildingNumber" defaultValue={building?.buildingNumber} required /></Field>
+          {building?.id && facilities && <Field label="Facility"><select name="facilityId" defaultValue={facilityId}><option value="">Select facility</option>{facilities.map((facility) => <option key={facility.id} value={facility.id}>{facility.name} · {facility.facilityId}</option>)}</select></Field>}
           <Field label="Address"><input name="address" defaultValue={building?.address ?? ""} /></Field>
           <Field label="Year built"><input name="yearConstructed" type="number" defaultValue={building?.yearConstructed ?? ""} /></Field>
           <Field label="Square footage"><input name="squareFootage" type="number" defaultValue={building?.squareFootage ?? ""} /></Field>
@@ -192,7 +195,7 @@ export function BuildingEditor({
           <Field label="Management plan"><input name="managementPlanStatus" defaultValue={building?.managementPlanStatus ?? "current"} /></Field>
           <Field label="Last inspection"><input name="lastInspectionAt" type="date" defaultValue={d(building?.lastInspectionAt)} /></Field>
           <Field label="Next inspection"><input name="nextInspectionAt" type="date" defaultValue={d(building?.nextInspectionAt)} /></Field>
-        </Grid>
+        </div>
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={building?.notes ?? ""} /></Field>
         <button className="btn btn-primary">{building?.id ? "Save building" : "Create building"}</button>
       </form>

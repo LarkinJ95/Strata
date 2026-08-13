@@ -18,7 +18,7 @@ import { can, getSession, assertBuildingAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { evaluateBuilding } from "@/lib/compliance";
 import { AcmChip, Chip, ConditionChip, Panel } from "@/components/ui/primitives";
-import { ActivityList, PhotoThumb } from "@/components/records";
+import { ActivityList, InventoryTable, PhotoThumb } from "@/components/records";
 import { fileUrl } from "@/lib/files";
 import { formatDate, formatNumber, parseJson, photoPolicyMessage } from "@/lib/utils";
 import { StartInspectionButton } from "@/components/forms/actions-ui";
@@ -60,6 +60,15 @@ const TABS = [
   { id: "activity", label: "Activity", icon: Activity },
 ] as const;
 
+const TAB_GROUPS = [
+  { id: "overview", label: "Overview", tabs: ["overview"] },
+  { id: "materials", label: "Materials", tabs: ["inventory", "samples", "paint"] },
+  { id: "spaces", label: "Spaces", tabs: ["spaces"] },
+  { id: "program", label: "Program", tabs: ["ppe", "repairs", "inspections"] },
+  { id: "records", label: "Records", tabs: ["photos", "documents", "plans"] },
+  { id: "activity", label: "Activity", tabs: ["activity"] },
+] as const;
+
 export default async function BuildingPage({
   params,
   searchParams,
@@ -88,7 +97,7 @@ export default async function BuildingPage({
     db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } }),
     db.paintSample.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { sampleNumber: "asc" } }),
     db.buildingPpe.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { item: "asc" } }),
-    db.inventoryItem.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { inventoryCode: "asc" } }),
+    db.inventoryItem.findMany({ where: { buildingId: buildingRecord.id }, include: { functionalArea: { select: { id: true, name: true, faCode: true } }, sampleLinks: { select: { id: true } }, photoLinks: { select: { id: true } } }, orderBy: { inventoryCode: "asc" } }),
     db.repair.findMany({ where: { buildingId: buildingRecord.id }, include: { inventoryItem: true }, orderBy: { identifiedAt: "desc" } }),
     db.sample.findMany({ where: { buildingId: buildingRecord.id }, include: { layers: { include: { result: true } } }, orderBy: { collectionDate: "desc" } }),
     db.inspection.findMany({ where: { buildingId: buildingRecord.id }, include: { inspector: true }, orderBy: { scheduledDate: "desc" } }),
@@ -97,15 +106,17 @@ export default async function BuildingPage({
     db.photo.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
     db.floorPlan.findMany({ where: { buildingId: buildingRecord.id }, include: { markers: true } }),
   ]);
-  const inventoryAreaRows = await db.$queryRawUnsafe<Array<{ id: string; functionalAreaId: string | null }>>('SELECT "id", "functionalAreaId" FROM "InventoryItem" WHERE "buildingId" = ?', buildingRecord.id);
-  const inventoryAreaById = new Map(inventoryAreaRows.map((row) => [row.id, row.functionalAreaId]));
-  const inventoryWithAreas = inventoryItems.map((item) => ({ ...item, functionalAreaId: inventoryAreaById.get(item.id) ?? null }));
-  const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems: inventoryWithAreas, repairs, samples, inspections, activities, documents, photos, floorPlans };
+  const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, samples, inspections, activities, documents, photos, floorPlans };
 
   const laboratories = user.isClient ? [] : await db.laboratory.findMany({
     where: { organizationId: user.organizationId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
+  });
+  const clientFacilities = user.isClient ? [] : await db.facility.findMany({
+    where: { clientId: building.clientId, organizationId: user.organizationId },
+    select: { id: true, name: true, facilityId: true },
+    orderBy: { facilityId: "asc" },
   });
 
   const compliance = await evaluateBuilding(building.id);
@@ -121,6 +132,7 @@ export default async function BuildingPage({
       ["confirmed_acm", "assumed_acm", "pacm"].includes(i.acmClassification) &&
       ["damaged", "significantly_damaged", "needs_repair"].includes(i.condition)
   );
+  const oldestDamagedDays = damaged.length ? Math.max(0, Math.ceil((Date.now() - Math.min(...damaged.map((item) => item.updatedAt.getTime()))) / 86400000)) : 0;
   const counts = {
     confirmed: active.filter((i) => i.acmClassification === "confirmed_acm").length,
     assumed: active.filter((i) => i.acmClassification === "assumed_acm").length,
@@ -128,6 +140,9 @@ export default async function BuildingPage({
     non: active.filter((i) => i.acmClassification === "non_acm").length,
     unknown: active.filter((i) => i.acmClassification === "unknown").length,
   };
+  const matrixClasses = ["confirmed_acm", "assumed_acm", "pacm", "non_acm", "unknown"];
+  const matrixConditions = ["good", "fair", "damaged", "significantly_damaged", "inaccessible"];
+  const matrixCount = (classification: string, condition?: string) => active.filter((item) => item.acmClassification === classification && (!condition || item.condition === condition)).length;
   const qtyTotal = active.reduce((s, i) => s + (i.currentQuantity || 0), 0);
   const units = [...new Set(active.map((i) => i.quantityUnit))].join(" / ") || "units";
   const statusLabel =
@@ -136,6 +151,7 @@ export default async function BuildingPage({
   const photoMsg = photoPolicyMessage(building.photoPolicy);
   const reasons = compliance.reasons.length ? compliance.reasons : parseJson<string[]>(building.complianceReasons, []);
   const href = (t: string) => `/buildings/${building.id}${t === "overview" ? "" : `?tab=${t}`}`;
+  const activeGroup = TAB_GROUPS.find((group) => (group.tabs as readonly string[]).includes(tab)) ?? TAB_GROUPS[0];
   const activeFloorId = tab === "spaces" && building.floors.some((floor) => floor.id === rawFloor) ? rawFloor! : "all";
   const activeFloor = activeFloorId === "all" ? null : building.floors.find((floor) => floor.id === activeFloorId)!;
   const visibleAreas = activeFloor ? building.areas.filter((area) => area.floorId === activeFloor.id) : building.areas;
@@ -151,53 +167,53 @@ export default async function BuildingPage({
         <span className="text-ink">{building.name}</span>
       </div>
 
-      <Panel className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <Panel className="relative overflow-hidden p-4">
+        <span className={`absolute inset-y-0 left-0 w-1 ${compliance.status === "current" ? "bg-status-current" : compliance.status === "attention" ? "bg-status-attention" : "bg-status-action"}`} />
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
             <Chip tone={statusTone}>{statusLabel}</Chip>
             <h1 className="mt-2 font-display text-2xl font-semibold">{building.name}</h1>
             <div className="mt-1 text-sm text-ink-3">#{building.buildingNumber} · {building.facility.name} · {building.client.name}</div>
             <div className="mt-1 flex items-center gap-1.5 text-sm text-ink-3">
               <MapPin size={14} /> {building.address || building.facility.address || "—"}
             </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10.5px] uppercase text-ink-3">
+              <span>Built {building.yearConstructed ?? "—"}</span>
+              <span>{formatNumber(building.squareFootage)} SF</span>
+              <span>{building.floorsCount ?? building.floors.length} floors</span>
+              <span className="capitalize">{building.occupancyStatus}</span>
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {damaged.length > 0 && <span className="chip chip-danger">{damaged.length} damaged material(s)</span>}
-              {openRepairs.length > 0 && <span className="chip chip-warn">{openRepairs.length} open repair(s)</span>}
+              {damaged.length > 0 && <Link href={href("inventory")} className="chip chip-danger">{damaged.length} damaged ACM — oldest {oldestDamagedDays} days</Link>}
+              {building.nextInspectionAt && building.nextInspectionAt < new Date() && <Link href={href("inspections")} className="chip chip-danger">Inspection overdue — {Math.ceil((Date.now() - building.nextInspectionAt.getTime()) / 86400000)} days</Link>}
+              {openRepairs.length > 0 && <Link href={href("repairs")} className="chip chip-warn">{openRepairs.length} open repairs{overdueRepairs.length ? ` — ${overdueRepairs.length} past due` : ""}</Link>}
+              {unreconciled.length > 0 && <Link href={href("samples")} className="chip chip-ice">{unreconciled.length} results awaiting reconciliation</Link>}
               {photoMsg && <span className="chip chip-danger">{photoMsg}</span>}
             </div>
           </div>
-          <div className="text-right text-sm text-ink-2">
-            <div>Built {building.yearConstructed ?? "—"}</div>
-            <div>{formatNumber(building.squareFootage)} SF</div>
-            <div>{building.floorsCount ?? building.floors.length} floors</div>
-            <div className="capitalize">{building.occupancyStatus}</div>
+          <div className="flex shrink-0 flex-wrap gap-2 xl:flex-nowrap">
+            {!user.isClient && <StartInspectionButton buildingId={building.id} />}
+            <details className="relative"><summary className="btn btn-ghost cursor-pointer whitespace-nowrap text-xs">Generate ▾</summary><div className="absolute right-0 z-10 mt-1 grid min-w-48 gap-1 rounded-xl border border-[rgba(16,36,72,0.1)] bg-white p-2 shadow-lg"><a href={`/api/buildings/${building.id}/packet`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2" target="_blank" rel="noreferrer">Inspection packet PDF</a><Link href={`/buildings/${building.id}/management-plan`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2">Management plan</Link></div></details>
           </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <a href={`/api/buildings/${building.id}/packet`} className="btn btn-ghost text-xs" target="_blank" rel="noreferrer">
-            Inspection packet PDF
-          </a>
-          <Link href={`/buildings/${building.id}/plans`} className="btn btn-ghost text-xs">Floor plans</Link>
-          {!user.isClient && <StartInspectionButton buildingId={building.id} />}
         </div>
         {!user.isClient && (
-          <div className="mt-4">
-            <BuildingEditor building={building} />
-          </div>
+          <details className="mt-4">
+            <summary className="btn btn-ghost cursor-pointer text-xs">Edit building</summary>
+            <div className="mt-3">
+            <BuildingEditor building={building} facilityId={building.facilityId} facilities={clientFacilities} />
+            </div>
+          </details>
         )}
       </Panel>
 
       <div className="mt-4 flex gap-1 overflow-x-auto border-b border-[rgba(16,36,72,0.08)]">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <Link key={t.id} href={href(t.id)} className={cn("bldg-tab", tab === t.id && "active")}>
-              <Icon size={14} />
-              {t.label}
-            </Link>
-          );
+        {TAB_GROUPS.map((group) => {
+          const defaultTab = group.tabs[0];
+          const count = group.id === "materials" ? items.length : group.id === "spaces" ? building.floors.length + building.areas.length : group.id === "program" ? openRepairs.length + building.inspections.length : group.id === "records" ? building.photos.length + building.documents.length : undefined;
+          return <Link key={group.id} href={href(defaultTab)} className={cn("bldg-tab", activeGroup.id === group.id && "active")}><span>{group.label}</span>{count !== undefined && <span className="font-mono text-[10.5px] text-ink-3">{count}</span>}{(group.id === "materials" && damaged.length > 0 || group.id === "program" && overdueRepairs.length > 0) && <span className="h-1.5 w-1.5 rounded-full bg-status-action" />}</Link>;
         })}
       </div>
+      {activeGroup.tabs.length > 1 && <div className="mt-3 flex flex-wrap gap-2">{activeGroup.tabs.map((item) => { const detail = TABS.find((candidate) => candidate.id === item)!; return <Link key={item} href={href(item)} className={cn("rounded-full border px-3 py-1 text-xs", tab === item ? "border-teal bg-teal-soft text-teal-dim" : "border-[rgba(16,36,72,0.1)] bg-white text-ink-3 hover:bg-paper-2")}>{detail.label}</Link>; })}</div>}
 
       <div className="mt-5">
         {tab === "overview" && (
@@ -248,6 +264,7 @@ export default async function BuildingPage({
             </Panel>
             <Panel className="p-5">
               <div className="mb-3 font-display font-semibold">Inspection Status</div>
+              <div className="mb-4"><div className="relative h-2 overflow-hidden rounded-full bg-paper-2"><div className="h-full bg-teal" style={{ width: `${building.lastInspectionAt && building.nextInspectionAt ? `${Math.max(0, Math.min(100, ((Date.now() - building.lastInspectionAt.getTime()) / Math.max(1, building.nextInspectionAt.getTime() - building.lastInspectionAt.getTime())) * 100))}%` : "0%"}` }} /></div><div className="mt-1 flex justify-between font-mono text-[10px] text-ink-3"><span>LAST {formatDate(building.lastInspectionAt)}</span><span className={cn(building.nextInspectionAt && building.nextInspectionAt < new Date() && "text-status-action")}>NEXT {formatDate(building.nextInspectionAt)}</span></div></div>
               {[
                 ["Last inspection", formatDate(building.lastInspectionAt)],
                 ["Next inspection", formatDate(building.nextInspectionAt)],
@@ -280,49 +297,27 @@ export default async function BuildingPage({
                 </div>
               </Panel>
             )}
+            <Panel className="overflow-hidden p-5 lg:col-span-2">
+              <div className="mb-3 font-display font-semibold">Material risk — classification × condition</div>
+              <div className="table-wrap"><table className="data"><thead><tr><th>Classification</th>{matrixConditions.map((condition) => <th key={condition}>{condition.replaceAll("_", " ")}</th>)}<th>Total</th></tr></thead><tbody>{matrixClasses.map((classification) => <tr key={classification}><td><AcmChip value={classification} /></td>{matrixConditions.map((condition) => { const count = matrixCount(classification, condition); return <td key={condition}>{count ? <Link href={`/inventory?building=${building.id}&acm=${classification}&condition=${condition}`} className={cn("font-mono text-teal-dim hover:underline", ["damaged", "significantly_damaged"].includes(condition) && "text-status-action")}>{count}</Link> : <span className="text-ink-3">—</span>}</td>; })}<td className="font-mono">{matrixCount(classification)}</td></tr>)}</tbody></table></div>
+            </Panel>
+            <Panel className="p-5">
+              <div className="mb-3 font-display font-semibold">Quantity ledger &amp; record health</div>
+              {["sample", "functional area", "photo", "floor plan"].map((label) => { const numerator = label === "sample" ? active.filter((item) => item.sampleLinks?.length).length : label === "functional area" ? active.filter((item) => item.functionalAreaId).length : label === "photo" ? active.filter((item) => item.photoLinks?.length).length : active.filter((item) => item.floorPlanX != null && item.floorPlanY != null).length; const percent = active.length ? Math.round((numerator / active.length) * 100) : 0; return <div key={label} className="mb-3"><div className="flex justify-between text-xs"><span className="capitalize">{label} linked</span><span className="font-mono">{percent}%</span></div><div className="mt-1 h-1.5 overflow-hidden rounded bg-paper-2"><div className={cn("h-full", percent < 50 ? "bg-status-action" : percent < 85 ? "bg-status-attention" : "bg-status-current")} style={{ width: `${percent}%` }} /></div></div>; })}
+            </Panel>
           </div>
         )}
 
         {tab === "inventory" && (
           <div className="space-y-3">
-            {!user.isClient && <InventoryEditor buildingId={building.id} areas={building.areas} />}
-            {items.length ? (
-              <Panel className="overflow-hidden p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="border-b border-[rgba(16,36,72,0.1)] bg-[rgba(16,36,72,0.025)] text-xs uppercase tracking-[0.08em] text-ink-3">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Item #</th>
-                        <th className="px-4 py-3 font-medium">Material & location</th>
-                        <th className="px-4 py-3 font-medium">Classification</th>
-                        <th className="px-4 py-3 font-medium">Condition</th>
-                        <th className="px-4 py-3 text-right font-medium">Current quantity</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[rgba(16,36,72,0.08)]">
-                      {items.map((it) => {
-                        const location = [it.floor, it.room, it.area, it.specificLocation].filter(Boolean).join(" · ");
-                        return (
-                          <tr key={it.id} className="align-top transition-colors hover:bg-[rgba(16,104,108,0.035)]">
-                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><span className="mono-id font-medium text-teal-dim">{it.inventoryCode}</span>{it.internalCode && <span className="mt-1 block text-[11px] text-ink-3">{it.internalCode}</span>}</Link></td>
-                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><span className="font-medium text-ink">{it.materialDescription}</span><span className="mt-1 block text-xs text-ink-3">{location || "Location not specified"}</span></Link></td>
-                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><AcmChip value={it.acmClassification} /></Link></td>
-                            <td className="p-0"><Link href={`/inventory/${it.id}`} className="block px-4 py-3"><ConditionChip value={it.condition} /></Link></td>
-                            <td className="p-0 text-right"><Link href={`/inventory/${it.id}`} className="block px-4 py-3 whitespace-nowrap text-ink-2">{formatNumber(it.currentQuantity)} {it.quantityUnit}</Link></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Panel>
-            ) : <p className="text-sm text-ink-3">No inventory materials have been recorded for this building.</p>}
+            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add material</summary><div className="mt-3"><InventoryEditor buildingId={building.id} areas={building.areas} /></div></details>}
+            {items.length ? <Panel className="overflow-hidden p-0"><InventoryTable rows={items} showBuilding={false} /></Panel> : <Panel className="p-5"><div className="font-display font-semibold">No materials yet</div><p className="mt-1 text-sm text-ink-3">Add the first material record to start this building’s compliance inventory.</p></Panel>}
           </div>
         )}
 
         {tab === "samples" && (
           <div className="space-y-3">
-            {!user.isClient && <SampleEditor buildingId={building.id} laboratories={laboratories} />}
+            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add sample</summary><div className="mt-3"><SampleEditor buildingId={building.id} laboratories={laboratories} /></div></details>}
             {building.samples.map((s) => (
               <Panel key={s.id} className="p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -333,7 +328,7 @@ export default async function BuildingPage({
                   </div>
                   <Chip tone="ice">{s.status.replaceAll("_", " ")}</Chip>
                 </div>
-                {!user.isClient && <SampleEditor buildingId={building.id} sample={s} laboratories={laboratories} />}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><SampleEditor buildingId={building.id} sample={s} laboratories={laboratories} /></div></details>}
               </Panel>
             ))}
           </div>
@@ -342,7 +337,7 @@ export default async function BuildingPage({
         {tab === "paint" && (
           <div className="space-y-3">
             {!user.isClient && (
-              <PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} laboratories={laboratories} />
+              <details><summary className="btn btn-primary cursor-pointer text-xs">Add paint sample</summary><div className="mt-3"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} laboratories={laboratories} /></div></details>
             )}
             {building.paintSamples.map((s) => (
               <Panel key={s.id} className="p-4">
@@ -363,8 +358,8 @@ export default async function BuildingPage({
                   {s.leadMgCm2 != null && <span>{s.leadMgCm2} mg/cm² · </span>}
                   {s.resultSummary}
                 </div>
-                {!user.isClient && <div className="mt-2"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} sample={s} laboratories={laboratories} /></div>}
-                {!user.isClient && <form action={deletePaintSample} className="mt-2"><AccessField /><input type="hidden" name="id" value={s.id} /><ConfirmDeleteButton label="Delete paint sample" message="Delete this paint sample permanently?" /></form>}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} sample={s} laboratories={laboratories} /></div></details>}
+                {!user.isClient && <details className="mt-2"><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deletePaintSample} className="mt-2"><AccessField /><input type="hidden" name="id" value={s.id} /><ConfirmDeleteButton label="Delete paint sample" message="Delete this paint sample permanently?" /></form></details>}
               </Panel>
             ))}
             {!building.paintSamples.length && <p className="text-sm text-ink-3">No paint samples recorded for this building.</p>}
@@ -389,31 +384,32 @@ export default async function BuildingPage({
               <Panel className="p-4">
                 <div className="font-medium">{activeFloor.name} <span className="text-xs text-ink-3">level {activeFloor.level}</span></div>
                 <div className="text-xs text-ink-3">{activeFloor.occupancy || "—"} · {activeFloor.squareFootage ? `${activeFloor.squareFootage.toLocaleString()} SF` : "SF not set"}</div>
-                {!user.isClient && <div className="mt-2"><FloorEditor buildingId={building.id} floor={activeFloor} /></div>}
-                {!user.isClient && <form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={activeFloor.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form>}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><FloorEditor buildingId={building.id} floor={activeFloor} /></div></details>}
+                {!user.isClient && <details className="mt-2"><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={activeFloor.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form></details>}
               </Panel>
             )}
-            {!user.isClient && <div className="flex flex-wrap gap-3"><FloorEditor buildingId={building.id} /><FunctionalAreaEditor buildingId={building.id} floors={building.floors} /></div>}
+            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add space</summary><div className="mt-3 flex flex-wrap gap-3"><FloorEditor buildingId={building.id} /><FunctionalAreaEditor buildingId={building.id} floors={building.floors} /></div></details>}
             <div className="space-y-3">
               <div className="font-display font-semibold">{activeFloor ? `${activeFloor.name} functional areas / rooms` : "All functional areas / rooms"}</div>
-              {visibleAreas.map((a) => (
+              {visibleAreas.map((a) => { const areaItems = items.filter((item) => item.functionalAreaId === a.id); const damagedInArea = areaItems.filter((item) => ["damaged", "significantly_damaged", "needs_repair"].includes(item.condition)).length; return (
                 <Panel key={a.id} className="p-4">
                   <div className="font-medium">{a.faCode ? `${a.faCode} · ` : ""}{a.name}</div>
                   <div className="text-xs text-ink-3">{a.areaType?.replaceAll("_", " ")} · {building.floors.find((f) => f.id === a.floorId)?.name || "No floor"}</div>
+                  <div className="mt-2 text-xs text-ink-3">{areaItems.length} materials · {areaItems.filter((item) => ["confirmed_acm", "assumed_acm", "pacm"].includes(item.acmClassification)).length} ACM/PACM · worst: {damagedInArea ? "damaged" : areaItems.some((item) => item.condition === "fair") ? "fair" : areaItems[0]?.condition ?? "none"}</div>
                   {a.useDescription && <div className="mt-1 text-sm text-ink-2">{a.useDescription}</div>}
                   <div className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
                     <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3">Inventory in this FA</div>
-                    {items.filter((item) => item.functionalAreaId === a.id).map((item) => (
+                    {areaItems.map((item) => (
                       <Link key={item.id} href={`/inventory/${item.id}`} className="block rounded-lg px-2 py-1 text-sm hover:bg-paper-2">
                         <span className="mono-id text-teal-dim">{item.inventoryCode}</span> · {item.materialDescription}
                       </Link>
                     ))}
-                    {!items.some((item) => item.functionalAreaId === a.id) && <div className="text-xs text-ink-3">No inventory assigned to this functional area.</div>}
+                    {!areaItems.length && <div className="text-xs text-ink-3">No inventory assigned to this functional area.</div>}
                   </div>
-                  {!user.isClient && <div className="mt-2"><FunctionalAreaEditor buildingId={building.id} floors={building.floors} area={a} /></div>}
-                  {!user.isClient && <form action={deleteFunctionalArea} className="mt-2"><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form>}
+                  {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><FunctionalAreaEditor buildingId={building.id} floors={building.floors} area={a} /></div></details>}
+                  {!user.isClient && <details className="mt-2"><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteFunctionalArea} className="mt-2"><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form></details>}
                 </Panel>
-              ))}
+              ); })}
               {!visibleAreas.length && <p className="text-sm text-ink-3">No functional areas are assigned to {activeFloor ? activeFloor.name : "this building"}.</p>}
             </div>
           </div>
@@ -422,7 +418,7 @@ export default async function BuildingPage({
         {tab === "ppe" && (
           <div className="space-y-3">
             <p className="text-sm text-ink-3">PPE posted here is operational guidance for this building. It does not replace a site-specific hazard assessment.</p>
-            {!user.isClient && <PpeEditor buildingId={building.id} />}
+            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add PPE item</summary><div className="mt-3"><PpeEditor buildingId={building.id} /></div></details>}
             {building.ppeRequirements.map((p) => (
               <Panel key={p.id} className="p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -433,7 +429,7 @@ export default async function BuildingPage({
                   </div>
                   <Chip tone={p.required ? "danger" : "warn"}>{p.required ? "Required" : "Recommended"}</Chip>
                 </div>
-                {!user.isClient && <div className="mt-2"><PpeEditor buildingId={building.id} item={p} /></div>}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><PpeEditor buildingId={building.id} item={p} /></div></details>}
               </Panel>
             ))}
             {!building.ppeRequirements.length && <p className="text-sm text-ink-3">No PPE requirements posted yet.</p>}
@@ -442,7 +438,7 @@ export default async function BuildingPage({
 
         {tab === "repairs" && (
           <div className="space-y-3">
-            {!user.isClient && <RepairEditor inventoryOptions={items} />}
+            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add repair</summary><div className="mt-3"><RepairEditor inventoryOptions={items} /></div></details>}
             {building.repairs.map((r) => (
               <Panel key={r.id} className="p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -453,7 +449,7 @@ export default async function BuildingPage({
                   </div>
                   <Chip tone={r.status === "closed" ? "ok" : "warn"}>{r.status.replaceAll("_", " ")}</Chip>
                 </div>
-                {!user.isClient && <RepairEditor repair={r} inventoryOptions={items} />}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><RepairEditor repair={r} inventoryOptions={items} /></div></details>}
               </Panel>
             ))}
           </div>
@@ -461,6 +457,11 @@ export default async function BuildingPage({
 
         {tab === "inspections" && (
           <div className="space-y-3">
+            {!user.isClient && (
+              <div className="flex justify-end">
+                <StartInspectionButton buildingId={building.id} label="Add inspection" />
+              </div>
+            )}
             {building.inspections.map((i) => (
               <Panel key={i.id} className="p-4">
                 <div className="mb-2 flex items-center justify-between">
@@ -470,9 +471,10 @@ export default async function BuildingPage({
                   <Chip tone={i.status === "completed" ? "ok" : "ice"}>{i.status.replaceAll("_", " ")}</Chip>
                 </div>
                 <div className="mb-2 text-xs text-ink-3">{formatDate(i.scheduledDate)} · {i.inspector?.name}</div>
-                {!user.isClient && <InspectionEditor inspection={i} />}
+                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><InspectionEditor inspection={i} /></div></details>}
               </Panel>
             ))}
+            {!building.inspections.length && <p className="text-sm text-ink-3">No inspections have been recorded for this building.</p>}
           </div>
         )}
 
@@ -489,11 +491,11 @@ export default async function BuildingPage({
                 <div key={p.id} className="space-y-2">
                   <PhotoThumb storageKey={p.storageKey} caption={p.originalFilename} />
                   {!user.isClient && (
-                    <form action={deletePhoto}>
+                    <details><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deletePhoto} className="mt-2">
                       <AccessField />
                       <input type="hidden" name="id" value={p.id} />
                       <ConfirmDeleteButton label="Delete photo" message="Delete this photograph permanently?" />
-                    </form>
+                    </form></details>
                   )}
                 </div>
               ))}
@@ -518,11 +520,11 @@ export default async function BuildingPage({
                     <p className="mt-1 text-xs text-ink-3">Pin inventory items or samples directly on the drawing. Existing pins appear below.</p>
                   </div>
                   {!user.isClient && (
-                    <form action={deleteFloorPlan}>
+                    <details><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteFloorPlan} className="mt-2">
                       <AccessField />
                       <input type="hidden" name="id" value={plan.id} />
                       <ConfirmDeleteButton label="Delete floor plan" message="Delete this floor plan and all its map pins? This cannot be undone." />
-                    </form>
+                    </form></details>
                   )}
                 </div>
                 {!user.isClient && <div className="max-w-5xl"><FloorPlanMapper plan={plan} items={building.inventoryItems} samples={building.samples} /></div>}
@@ -562,11 +564,11 @@ export default async function BuildingPage({
                       </form>
                     )}
                     {!user.isClient && (
-                      <form action={deleteDocument}>
+                      <details><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteDocument} className="mt-2">
                         <AccessField />
                         <input type="hidden" name="id" value={d.id} />
                         <ConfirmDeleteButton label="Delete" message="Delete this document permanently?" />
-                      </form>
+                      </form></details>
                     )}
                   </div>
                 </div>

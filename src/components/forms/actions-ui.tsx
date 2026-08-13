@@ -73,7 +73,7 @@ export function AddInspectionControl({ buildings }: { buildings: InspectionBuild
   );
 }
 
-export function StartInspectionButton({ buildingId }: { buildingId: string }) {
+export function StartInspectionButton({ buildingId, label = "Start inspection" }: { buildingId: string; label?: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   return (
@@ -87,7 +87,7 @@ export function StartInspectionButton({ buildingId }: { buildingId: string }) {
         })
       }
     >
-      {pending ? "Starting…" : "Start inspection"}
+      {pending ? "Starting…" : label}
     </button>
   );
 }
