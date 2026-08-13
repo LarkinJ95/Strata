@@ -226,6 +226,16 @@ export async function saveHistoricalInspection(input: { buildingId: string; insp
   if (input.performedAt > new Date()) throw new Error("Historical inspection dates cannot be in the future");
   const building = await db.building.findFirst({ where: { id: input.buildingId, organizationId: user.organizationId } });
   if (!building) throw new Error("Building not found");
+  const existing = await db.inspection.findFirst({
+    where: {
+      buildingId: building.id,
+      inspectionType: input.inspectionType,
+      scheduledDate: input.performedAt,
+      status: { in: ["draft", "in_progress", "submitted", "completed"] },
+    },
+    select: { id: true },
+  });
+  if (existing) return { id: existing.id, applied: 0, historyOnly: 0, alreadyRecorded: true };
   const filled = input.items.filter((item) => item.currentCondition || item.currentLabel || item.quantityObserved != null || item.materialRemoved || item.notes);
   const inspection = await db.inspection.create({ data: { organizationId: user.organizationId, clientId: building.clientId, buildingId: building.id, inspectionType: input.inspectionType, scheduledDate: input.performedAt, startedAt: input.performedAt, completedAt: input.status === "completed" ? input.performedAt : null, signedAt: input.status === "completed" ? input.performedAt : null, status: input.status, completionPct: filled.length ? 100 : 0, findings: input.findings, notes: input.notes } });
   let applied = 0;
