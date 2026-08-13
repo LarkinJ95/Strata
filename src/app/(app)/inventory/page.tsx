@@ -43,7 +43,7 @@ export default async function InventoryPage({
   const [rows, buildings] = await Promise.all([
     db.inventoryItem.findMany({
       where,
-      include: { building: true, functionalArea: { select: { id: true, name: true, faCode: true } }, photoLinks: { select: { id: true } }, inspectionItems: { orderBy: { inspectedAt: "desc" }, take: 1, include: { inspection: { select: { inspector: { select: { name: true } } } } } } },
+      include: { building: true, functionalArea: { select: { id: true, name: true, faCode: true } }, photoLinks: { select: { id: true } }, inspectionItems: { where: { inspected: true, inspection: { status: "completed" } }, orderBy: { inspectedAt: "desc" }, take: 1, include: { inspection: { select: { inspector: { select: { name: true } } } } } } },
       orderBy: sp.sort === "quantity" ? { currentQuantity: "desc" } : sp.sort === "building" ? { building: { buildingNumber: "asc" } } : { inventoryCode: "asc" },
       skip: (currentPage - 1) * per,
       take: per,
