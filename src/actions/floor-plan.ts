@@ -77,19 +77,31 @@ export async function useDocumentAsFloorPlan(formData: FormData) {
   }
   revalidatePath(`/buildings/${document.buildingId}`);
   revalidatePath(`/buildings/${document.buildingId}/plans`);
-  redirect(`/buildings/${document.buildingId}/plans`);
+  redirect(`/buildings/${document.buildingId}?tab=plans`);
 }
 
-export async function placeFloorPlanMarker(input: { floorPlanId: string; inventoryItemId: string; x: number; y: number }) {
+export async function placeFloorPlanMarker(input: { floorPlanId: string; recordType: "inventory" | "sample"; recordId: string; x: number; y: number }) {
   const user = await getSession();
-  if (!user || !can(user, "inventory.edit")) throw new Error("Not allowed to place map pins");
+  if (!user) throw new Error("Sign in required");
+  if (input.recordType === "inventory" && !can(user, "inventory.edit")) throw new Error("Not allowed to place inventory pins");
+  if (input.recordType === "sample" && !can(user, "samples.add")) throw new Error("Not allowed to place sample pins");
+  if (!["inventory", "sample"].includes(input.recordType)) throw new Error("Invalid record type");
   if (![input.x, input.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error("Invalid map position");
   const plan = await db.floorPlan.findFirst({ where: { id: input.floorPlanId, organizationId: user.organizationId } });
-  const item = await db.inventoryItem.findFirst({ where: { id: input.inventoryItemId, organizationId: user.organizationId, buildingId: plan?.buildingId } });
-  if (!plan || !item) throw new Error("Floor plan or inventory item not found");
-  const existing = await db.floorPlanMarker.findFirst({ where: { floorPlanId: plan.id, recordType: "inventory", recordId: item.id } });
-  if (existing) await db.floorPlanMarker.update({ where: { id: existing.id }, data: { x: input.x, y: input.y, label: `${item.inventoryCode} · ${item.materialDescription}` } });
-  else await db.floorPlanMarker.create({ data: { floorPlanId: plan.id, recordType: "inventory", recordId: item.id, x: input.x, y: input.y, label: `${item.inventoryCode} · ${item.materialDescription}` } });
+  if (!plan) throw new Error("Floor plan not found");
+  let label: string;
+  if (input.recordType === "inventory") {
+    const item = await db.inventoryItem.findFirst({ where: { id: input.recordId, organizationId: user.organizationId, buildingId: plan.buildingId } });
+    if (!item) throw new Error("Inventory item not found for this building");
+    label = `${item.inventoryCode} · ${item.materialDescription}`;
+  } else {
+    const sample = await db.sample.findFirst({ where: { id: input.recordId, organizationId: user.organizationId, buildingId: plan.buildingId } });
+    if (!sample) throw new Error("Sample not found for this building");
+    label = `${sample.sampleNumber} · ${sample.materialDescription || sample.material}`;
+  }
+  const existing = await db.floorPlanMarker.findFirst({ where: { floorPlanId: plan.id, recordType: input.recordType, recordId: input.recordId } });
+  if (existing) await db.floorPlanMarker.update({ where: { id: existing.id }, data: { x: input.x, y: input.y, label } });
+  else await db.floorPlanMarker.create({ data: { floorPlanId: plan.id, recordType: input.recordType, recordId: input.recordId, x: input.x, y: input.y, label } });
   await audit({ user, action: "floor_plan.marker.place", recordType: "floor_plan", recordId: plan.id, newValue: input });
   revalidatePath(`/buildings/${plan.buildingId}/plans`);
   return { ok: true };

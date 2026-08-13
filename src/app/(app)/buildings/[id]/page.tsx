@@ -24,9 +24,11 @@ import { formatDate, formatNumber, parseJson, photoPolicyMessage } from "@/lib/u
 import { StartInspectionButton } from "@/components/forms/actions-ui";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { DocumentUpload } from "@/components/forms/document-upload";
+import { FloorPlanUpload } from "@/components/forms/floor-plan-upload";
+import { FloorPlanMapper } from "@/components/forms/floor-plan-mapper";
 import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
 import { AccessField } from "@/components/forms/access-field";
-import { deleteDocument, deletePhoto, deleteFloor, deleteFunctionalArea, deletePaintSample } from "@/actions/records";
+import { deleteDocument, deletePhoto, deleteFloor, deleteFunctionalArea, deletePaintSample, deleteFloorPlan } from "@/actions/records";
 import { useDocumentAsFloorPlan } from "@/actions/floor-plan";
 import {
   BuildingEditor,
@@ -93,7 +95,7 @@ export default async function BuildingPage({
     db.activityEvent.findMany({ where: { buildingId: buildingRecord.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 }),
     db.document.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
     db.photo.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
-    db.floorPlan.findMany({ where: { buildingId: buildingRecord.id } }),
+    db.floorPlan.findMany({ where: { buildingId: buildingRecord.id }, include: { markers: true } }),
   ]);
   const inventoryAreaRows = await db.$queryRawUnsafe<Array<{ id: string; functionalAreaId: string | null }>>('SELECT "id", "functionalAreaId" FROM "InventoryItem" WHERE "buildingId" = ?', buildingRecord.id);
   const inventoryAreaById = new Map(inventoryAreaRows.map((row) => [row.id, row.functionalAreaId]));
@@ -189,7 +191,7 @@ export default async function BuildingPage({
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
-            <Link key={t.id} href={t.id === "plans" ? `/buildings/${building.id}/plans` : href(t.id)} className={cn("bldg-tab", tab === t.id && "active")}>
+            <Link key={t.id} href={href(t.id)} className={cn("bldg-tab", tab === t.id && "active")}>
               <Icon size={14} />
               {t.label}
             </Link>
@@ -500,6 +502,36 @@ export default async function BuildingPage({
           </div>
         )}
 
+        {tab === "plans" && (
+          <div className="space-y-4">
+            {can(user, "documents.upload") && (
+              <Panel className="p-5">
+                <div className="mb-3 font-display text-[15px] font-semibold">Upload floor plan</div>
+                <FloorPlanUpload buildingId={building.id} floors={building.floors} />
+              </Panel>
+            )}
+            {building.floorPlans.map((plan) => (
+              <Panel key={plan.id} className="p-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-display text-[15px] font-semibold">{plan.name}</div>
+                    <p className="mt-1 text-xs text-ink-3">Pin inventory items or samples directly on the drawing. Existing pins appear below.</p>
+                  </div>
+                  {!user.isClient && (
+                    <form action={deleteFloorPlan}>
+                      <AccessField />
+                      <input type="hidden" name="id" value={plan.id} />
+                      <ConfirmDeleteButton label="Delete floor plan" message="Delete this floor plan and all its map pins? This cannot be undone." />
+                    </form>
+                  )}
+                </div>
+                {!user.isClient && <div className="max-w-5xl"><FloorPlanMapper plan={plan} items={building.inventoryItems} samples={building.samples} /></div>}
+              </Panel>
+            ))}
+            {!building.floorPlans.length && <Panel className="p-5 text-sm text-ink-3">No floor plans have been uploaded.</Panel>}
+          </div>
+        )}
+
         {tab === "documents" && (
           <div className="space-y-4">
             {can(user, "documents.upload") && (
@@ -514,7 +546,7 @@ export default async function BuildingPage({
                   <div className="font-display text-[15px] font-semibold">Documents</div>
                   <p className="mt-1 text-xs text-ink-3">Use a drawing or floor plan below for interactive inventory mapping.</p>
                 </div>
-                <Link href={`/buildings/${building.id}/plans`} className="btn btn-ghost text-xs">Open Floor Plans</Link>
+                <Link href={href("plans")} className="btn btn-ghost text-xs">Open Floor Plans</Link>
               </div>
               {building.documents.map((d) => (
                 <div key={d.id} className="mb-3 flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-paper-2">
