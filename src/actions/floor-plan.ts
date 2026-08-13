@@ -100,9 +100,11 @@ export async function placeFloorPlanMarker(input: { floorPlanId: string; recordT
     label = `${sample.sampleNumber} · ${sample.materialDescription || sample.material}`;
   }
   const existing = await db.floorPlanMarker.findFirst({ where: { floorPlanId: plan.id, recordType: input.recordType, recordId: input.recordId } });
-  if (existing) await db.floorPlanMarker.update({ where: { id: existing.id }, data: { x: input.x, y: input.y, label } });
-  else await db.floorPlanMarker.create({ data: { floorPlanId: plan.id, recordType: input.recordType, recordId: input.recordId, x: input.x, y: input.y, label } });
+  const marker = existing
+    ? await db.floorPlanMarker.update({ where: { id: existing.id }, data: { x: input.x, y: input.y, label } })
+    : await db.floorPlanMarker.create({ data: { floorPlanId: plan.id, recordType: input.recordType, recordId: input.recordId, x: input.x, y: input.y, label } });
   await audit({ user, action: "floor_plan.marker.place", recordType: "floor_plan", recordId: plan.id, newValue: input });
+  revalidatePath(`/buildings/${plan.buildingId}`);
   revalidatePath(`/buildings/${plan.buildingId}/plans`);
-  return { ok: true };
+  return { ok: true, marker };
 }
