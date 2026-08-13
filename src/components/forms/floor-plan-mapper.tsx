@@ -20,7 +20,7 @@ export function FloorPlanMapper({ plan, items, samples }: { plan: { id: string; 
     <div className="field"><label>{recordType === "sample" ? "Sample to pin" : "Inventory item to pin"}</label><select value={itemId} onChange={(event) => setItemId(event.target.value)}><option value="">Choose {recordType === "sample" ? "a sample" : "an item"}</option>{recordType === "inventory" ? items.map((item) => <option key={item.id} value={item.id}>{item.inventoryCode} · {item.materialDescription}</option>) : samples.map((sample) => <option key={sample.id} value={sample.id}>{sample.sampleNumber} · {sample.materialDescription || sample.material}</option>)}</select></div>
     <p className="text-xs text-ink-3">Choose a record, then click its location on the drawing. Teal pins are inventory items; amber pins are samples. Clicking an existing record moves its pin.</p>
     <div className="overflow-auto rounded-xl border border-[rgba(16,36,72,0.08)] bg-paper-2 p-2">
-    <div role="button" tabIndex={0} aria-label="Floor plan. Choose a record, then click to place its pin." aria-disabled={!itemId || pending} className="relative block max-w-full cursor-crosshair aria-disabled:cursor-not-allowed aria-disabled:opacity-80" onClick={(event) => {
+    <div aria-disabled={!itemId || pending} className="relative inline-block max-w-full cursor-crosshair aria-disabled:cursor-not-allowed aria-disabled:opacity-80" onClick={(event) => {
       if (!itemId) return;
       const rect = event.currentTarget.getBoundingClientRect();
       const x = (event.clientX - rect.left) / rect.width;
