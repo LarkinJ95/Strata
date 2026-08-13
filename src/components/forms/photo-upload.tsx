@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { uploadPhoto } from "@/actions/mutations";
 import { DropFileInput } from "@/components/forms/drop-file-input";
+import { readStoredSession } from "@/lib/session-client";
 
 export function PhotoUpload({
   buildingId,
@@ -27,10 +27,22 @@ export function PhotoUpload({
         fd.set("buildingId", buildingId);
         fd.set("recordType", recordType);
         fd.set("recordId", recordId);
+        setMsg("");
         start(async () => {
-          await uploadPhoto(fd);
-          setMsg("Photograph stored.");
-          router.refresh();
+          try {
+            const token = readStoredSession();
+            const response = await fetch(`/api/buildings/${buildingId}/photos`, {
+              method: "POST",
+              body: fd,
+              headers: token ? { "x-strata-session": token } : undefined,
+            });
+            const payload = await response.json().catch(() => null) as { error?: string } | null;
+            if (!response.ok) throw new Error(payload?.error || "Could not upload photograph.");
+            setMsg("Photograph stored.");
+            router.refresh();
+          } catch (error) {
+            setMsg(error instanceof Error ? error.message : "Could not upload photograph.");
+          }
         });
       }}
     >
@@ -50,7 +62,7 @@ export function PhotoUpload({
         <input name="caption" placeholder="Optional" />
       </div>
       <button className="btn btn-primary" disabled={pending}>{pending ? "Uploading…" : "Add photo"}</button>
-      {msg && <span className="text-xs text-teal-dim">{msg}</span>}
+      {msg && <span role="status" className={msg === "Photograph stored." ? "text-xs text-teal-dim" : "text-xs text-status-action"}>{msg}</span>}
     </form>
   );
 }

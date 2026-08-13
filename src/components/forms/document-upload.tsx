@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { uploadBuildingDocument } from "@/actions/mutations";
 import { DropFileInput } from "@/components/forms/drop-file-input";
+import { readStoredSession } from "@/lib/session-client";
 
 export function DocumentUpload({ buildingId }: { buildingId: string }) {
   const router = useRouter();
@@ -23,7 +23,14 @@ export function DocumentUpload({ buildingId }: { buildingId: string }) {
         setMessage("");
         start(async () => {
           try {
-            await uploadBuildingDocument(data);
+            const token = readStoredSession();
+            const response = await fetch(`/api/buildings/${buildingId}/documents`, {
+              method: "POST",
+              body: data,
+              headers: token ? { "x-strata-session": token } : undefined,
+            });
+            const payload = await response.json().catch(() => null) as { error?: string } | null;
+            if (!response.ok) throw new Error(payload?.error || "Could not upload document.");
             formRef.current?.reset();
             setResetToken((token) => token + 1);
             setMessage("Document stored.");
