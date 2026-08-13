@@ -13,18 +13,27 @@ export default async function DataQualityPage() {
   if (user.isClient) redirect("/portal");
   const scope = dataScope(user);
   const unassignedRows = await db.$queryRawUnsafe<Array<{ id: string }>>('SELECT "id" FROM "InventoryItem" WHERE "organizationId" = ? AND "functionalAreaId" IS NULL LIMIT 200', user.organizationId);
-  const [unassignedFa, missingFloor, unlinkedSamples, duplicateCodes, areas] = await Promise.all([
-    db.inventoryItem.findMany({ where: { ...scope, id: { in: unassignedRows.map((row) => row.id) } }, include: { building: true }, take: 200, orderBy: { updatedAt: "desc" } }),
+  // D1 has a low SQL-variable ceiling. Keep the raw functional-area lookup,
+  // then hydrate those inventory records in small batches instead of sending a
+  // large `id IN (...)` clause. Areas and floors are loaded independently for
+  // the same reason: Prisma relation includes build another large IN clause.
+  const unassignedIdBatches = Array.from({ length: Math.ceil(unassignedRows.length / 75) }, (_, index) => unassignedRows.slice(index * 75, index * 75 + 75).map((row) => row.id));
+  const [unassignedFaBatches, missingFloor, unlinkedSamples, duplicateCodes, areas, floors] = await Promise.all([
+    Promise.all(unassignedIdBatches.map((ids) => db.inventoryItem.findMany({ where: { ...scope, id: { in: ids } }, include: { building: true }, orderBy: { updatedAt: "desc" } }))),
     db.inventoryItem.findMany({ where: { ...scope, floor: null }, include: { building: true }, take: 200, orderBy: { updatedAt: "desc" } }),
     db.sample.findMany({ where: { ...scope, inventoryLinks: { none: {} } }, include: { building: true }, take: 200, orderBy: { collectionDate: "desc" } }),
     db.inventoryItem.groupBy({ by: ["organizationId", "internalCode"], where: { ...scope, internalCode: { not: null } }, _count: { _all: true }, having: { internalCode: { _count: { gt: 1 } } }, orderBy: { internalCode: "asc" }, take: 50 }),
-    db.buildingArea.findMany({ where: { building: { organizationId: user.organizationId } }, include: { floor: { select: { name: true } } }, orderBy: { name: "asc" } }),
+    db.buildingArea.findMany({ where: { building: { organizationId: user.organizationId } }, orderBy: { name: "asc" } }),
+    db.buildingFloor.findMany({ where: { building: { organizationId: user.organizationId } }, select: { id: true, name: true } }),
   ]);
+  const unassignedFa = unassignedFaBatches.flat().sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  const floorNameById = new Map(floors.map((floor) => [floor.id, floor.name]));
+  const areasWithFloors = areas.map((area) => ({ ...area, floor: area.floorId ? { name: floorNameById.get(area.floorId) ?? "Unassigned floor" } : null }));
   const Block = ({ title, children }: { title: string; children: React.ReactNode }) => <Panel className="p-5"><SectionTitle>{title}</SectionTitle><div className="space-y-2">{children}</div></Panel>;
   return <div>
     <PageHeader kicker="Import and record controls" title="Data quality" description="Fix unassigned locations, incomplete links, and duplicate reference values before they become field-work issues." />
     <div className="grid gap-4 xl:grid-cols-2">
-      <Block title="Bulk functional-area correction"><BulkFunctionalAreaCorrection items={unassignedFa} areas={areas} /></Block>
+      <Block title="Bulk functional-area correction"><BulkFunctionalAreaCorrection items={unassignedFa} areas={areasWithFloors} /></Block>
       <Block title={`Inventory without a functional area (${unassignedFa.length})`}>
         {unassignedFa.map((item) => <Link key={item.id} href={`/inventory/${item.id}`} className="block rounded-lg px-2 py-1.5 hover:bg-paper-2"><b>{item.inventoryCode}</b> · {item.materialDescription}<span className="ml-2 text-xs text-ink-3">{item.building.buildingNumber}</span></Link>)}
         {!unassignedFa.length && <p className="text-sm text-ink-3">None.</p>}
