@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { uploadFloorPlan } from "@/actions/floor-plan";
 import { DropFileInput } from "@/components/forms/drop-file-input";
+import { readStoredSession } from "@/lib/session-client";
 
 export function FloorPlanUpload({ buildingId, floors }: { buildingId: string; floors: Array<{ id: string; name: string; level: number }> }) {
   const router = useRouter();
@@ -22,7 +22,14 @@ export function FloorPlanUpload({ buildingId, floors }: { buildingId: string; fl
         setMessage("");
         start(async () => {
           try {
-            await uploadFloorPlan(fd);
+            const token = readStoredSession();
+            const response = await fetch(`/api/buildings/${buildingId}/floor-plans`, {
+              method: "POST",
+              body: fd,
+              headers: token ? { "x-strata-session": token } : undefined,
+            });
+            const payload = await response.json().catch(() => null) as { error?: string } | null;
+            if (!response.ok) throw new Error(payload?.error || "Could not upload floor plan.");
             formRef.current?.reset();
             setResetToken((token) => token + 1);
             setMessage("Floor plan stored.");
