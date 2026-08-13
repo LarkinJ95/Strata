@@ -2,298 +2,40 @@ import PDFDocument from "pdfkit";
 import { ACM_LABELS, CONDITION_LABELS, formatDate, formatQty } from "@/lib/utils";
 import { canReadStorageKey, getStoredObject } from "@/lib/storage";
 
-function drawSchematic(
-  doc: PDFKit.PDFDocument,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  title: string,
-  rooms: { x: number; y: number; w: number; h: number; label: string; fill: string }[]
-) {
-  doc.save();
-  doc.rect(x, y, w, h).fill("#f4f7fb");
-  rooms.forEach((r) => {
-    doc.rect(x + r.x * w, y + r.y * h, r.w * w, r.h * h).fillAndStroke(r.fill, "#0b857f");
-    doc.fillColor("#0c1320").font("Helvetica-Bold").fontSize(8).text(
-      r.label,
-      x + r.x * w + 4,
-      y + r.y * h + r.h * h / 2 - 6,
-      { width: r.w * w - 8, align: "center" }
-    );
-  });
-  doc.fillColor("#0b857f").font("Helvetica-Bold").fontSize(9).text(title, x + 8, y + 8);
-  doc.restore();
+export type PacketOptions = { paper?: "letter" | "legal" | "a4" | "a3"; orientation?: "portrait" | "landscape"; density?: "standard" | "compact"; nestLayers?: boolean; groupRepeated?: boolean; includeFloorPlans?: boolean; includeRemoved?: boolean; floor?: string; functionalAreaId?: string };
+export type PacketItem = { id?: string; inventoryCode: string; materialDescription: string; materialCategory?: string | null; floor: string | null; room: string | null; specificLocation: string | null; currentQuantity: number | null; quantityUnit: string; condition: string; labelCondition: string | null; acmClassification: string; functionalArea?: { id: string; name: string; faCode: string | null } | null; homogeneousAreaId?: string | null; sampleLinks?: { sample: { sampleNumber: string } }[]; inspectionItems?: { previousCondition: string | null; inspection: { completedAt: Date | null } }[]; recordStatus?: string; hasOpenRepair?: boolean };
+type PacketBuilding = { organizationId: string; id?: string; name: string; buildingNumber: string; address: string | null; yearConstructed: number | null; squareFootage: number | null; buildingUse: string | null; lastInspectionAt: Date | null; nextInspectionAt: Date | null; photoPolicy: string; notes: string | null; client: { name: string; clientNumber: string }; facility: { name: string; facilityId: string }; organizationName: string; organizationAddress?: string | null; inventoryItems: PacketItem[]; floorPlans: { name: string; storageKey: string; mimeType: string }[]; ppe?: { item: string; required: boolean }[]; openRepairs?: { repairCode: string; problem: string }[] };
+type Row = { item: PacketItem; members: PacketItem[]; group: string; layer: boolean; sample: string; previous: string; height: number };
+export type PacketPage = { group?: string; rows: Row[]; first: boolean };
+const SIZES: Record<string, [number, number]> = { letter: [612, 792], legal: [612, 1008], a4: [595, 842], a3: [842, 1191] };
+const conditionKey = [["✓", "Previous condition"], ["F", CONDITION_LABELS.fair], ["D", CONDITION_LABELS.damaged], ["S", CONDITION_LABELS.significantly_damaged], ["R", CONDITION_LABELS.needs_repair], ["X", CONDITION_LABELS.removed], ["N", CONDITION_LABELS.inaccessible]];
+
+function geometry(options: PacketOptions) { const portrait = (options.orientation ?? "portrait") === "portrait"; const [w, h] = SIZES[options.paper ?? "letter"]; const width = portrait ? w : h; const height = portrait ? h : w; const compact = options.density === "compact"; const cols = portrait ? [24, 24, 38, 30, 170, 90, 50, 104] : [26, 26, 38, 50, 190, 106, 52, 150]; return { width, height, portrait, cols, margin: 22, row: compact ? 11 : 12.5, band: portrait ? 200 : 150 }; }
+
+/** Pure pagination shared by the PDF and packet preview. */
+export function layoutRows(items: PacketItem[], options: PacketOptions = {}): PacketPage[] {
+  const g = geometry(options); const visible = items.filter((item) => (options.includeRemoved || item.recordStatus !== "removed") && (!options.floor || item.floor === options.floor) && (!options.functionalAreaId || item.functionalArea?.id === options.functionalAreaId));
+  const sorted = [...visible].sort((a, b) => `${a.floor ?? ""}|${a.functionalArea?.name ?? a.room ?? ""}|${a.inventoryCode}`.localeCompare(`${b.floor ?? ""}|${b.functionalArea?.name ?? b.room ?? ""}|${b.inventoryCode}`));
+  const rowItems = options.groupRepeated ? sorted.reduce<PacketItem[][]>((groups, item) => { const group = item.functionalArea?.id || item.floor || "unassigned"; const key = item.homogeneousAreaId || (item.materialCategory ? `${item.materialDescription}|${item.materialCategory}` : item.id || item.inventoryCode); const previous = item.inspectionItems?.[0]?.previousCondition || item.condition; const existing = groups.find((candidate) => candidate[0] && (candidate[0].functionalArea?.id || candidate[0].floor || "unassigned") === group && (candidate[0].homogeneousAreaId || (candidate[0].materialCategory ? `${candidate[0].materialDescription}|${candidate[0].materialCategory}` : candidate[0].id || candidate[0].inventoryCode)) === key && previous === "good" && !item.hasOpenRepair && !candidate.some((member) => (member.inspectionItems?.[0]?.previousCondition || member.condition) !== "good" || member.hasOpenRepair)); if (existing) existing.push(item); else groups.push([item]); return groups; }, []) : sorted.map((item) => [item]);
+  const rows: Row[] = []; let prior = "";
+  for (const members of rowItems) { const item = members[0]; const group = item.functionalArea ? `${item.floor || "Unassigned level"} · ${item.functionalArea.faCode ? `${item.functionalArea.faCode} · ` : ""}${item.functionalArea.name}` : (item.floor || "Unassigned level"); const sample = item.sampleLinks?.[0]?.sample.sampleNumber || (item.acmClassification === "pacm" ? "PACM" : ""); const location = [item.room, item.specificLocation].filter(Boolean).join(" · "); const stem = sample.replace(/[A-Za-z]+$/, ""); const layer = Boolean(options.nestLayers && members.length === 1 && stem && prior === `${group}|${stem}|${location}`); prior = `${group}|${stem}|${location}`; const previous = item.inspectionItems?.[0]?.previousCondition || item.condition; const textLines = Math.max(1, Math.ceil(`${location} ${item.materialDescription} ${members.map((member) => member.room).join(", ")}`.length / (g.portrait ? 62 : 75))); rows.push({ item, members, group, layer, sample, previous, height: g.row * (textLines > 1 ? 1.5 : 1) }); }
+  const pages: PacketPage[] = []; let page: PacketPage = { rows: [], first: true }; let y = 64 + g.band + 24; const usable = g.height - 44;
+  for (const row of rows) { const newGroup = page.rows.length === 0 || page.group !== row.group; const needed = row.height + (newGroup ? 16 : 0); if (y + needed > usable && page.rows.length) { pages.push(page); page = { rows: [], first: false }; y = 88; } if (newGroup) { page.group = row.group; y += 16; } page.rows.push(row); y += row.height; }
+  if (page.rows.length || !pages.length) pages.push(page); return pages;
 }
 
-type PacketBuilding = {
-  organizationId: string;
-  name: string;
-  buildingNumber: string;
-  address: string | null;
-  yearConstructed: number | null;
-  squareFootage: number | null;
-  buildingUse: string | null;
-  lastInspectionAt: Date | null;
-  nextInspectionAt: Date | null;
-  photoPolicy: string;
-  notes: string | null;
-  client: { name: string; clientNumber: string };
-  facility: { name: string; facilityId: string };
-  organizationName: string;
-  organizationAddress: string | null;
-  inventoryItems: {
-    inventoryCode: string;
-    materialDescription: string;
-    floor: string | null;
-    room: string | null;
-    specificLocation: string | null;
-    currentQuantity: number | null;
-    quantityUnit: string;
-    condition: string;
-    labelCondition: string | null;
-    acmClassification: string;
-  }[];
-  floorPlans: {
-    name: string;
-    storageKey: string;
-    mimeType: string;
-  }[];
-};
+function closeoutFits(pages: PacketPage[], g: ReturnType<typeof geometry>) { const last = pages.at(-1); if (!last) return true; let y = last.first ? 54 + g.band : 54; y += 14; let group = ""; for (const row of last.rows) { if (row.group !== group) { y += 14; group = row.group; } y += row.height; } return y + 250 < g.height - 26; }
 
-function header(doc: PDFKit.PDFDocument, title: string, sub: string) {
-  doc.save();
-  doc.rect(0, 0, doc.page.width, 64).fill("#0b857f");
-  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(16).text("STRATA", 36, 18, { continued: false });
-  doc.font("Helvetica").fontSize(8).fillColor("#d7eee2").text("BUILDING ASBESTOS RECORD", 36, 36);
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#ffffff").text(title, 220, 18, { align: "right", width: doc.page.width - 256 });
-  doc.font("Helvetica").fontSize(8).fillColor("#d7eee2").text(sub, 220, 36, { align: "right", width: doc.page.width - 256 });
-  doc.restore();
-}
+/** Exact packet page count used by both the generated PDF and preview. */
+export function packetPageCount(items: PacketItem[], options: PacketOptions = {}, floorPlanCount = 0) { const pages = layoutRows(items, options); return pages.length + (closeoutFits(pages, geometry(options)) ? 0 : 1) + (options.includeFloorPlans === false ? 0 : floorPlanCount); }
 
-function footer(doc: PDFKit.PDFDocument, page: number, totalHint: string) {
-  const y = doc.page.height - 24;
-  doc.save();
-  doc.strokeColor("#d0d5dd").lineWidth(0.6).moveTo(36, y - 6).lineTo(doc.page.width - 36, y - 6).stroke();
-  doc.font("Helvetica").fontSize(7).fillColor("#6a7586");
-  doc.text("Operational field packet — not a legal determination.", 36, y, { lineBreak: false });
-  doc.text(`${totalHint}  ·  ${page}`, doc.page.width - 160, y, { width: 124, align: "right", lineBreak: false });
-  doc.restore();
-}
+function header(doc: PDFKit.PDFDocument, building: PacketBuilding, page: number, total: number) { doc.rect(0, 0, doc.page.width, 42).fill("#0b857f"); doc.fillColor("white").font("Helvetica-Bold").fontSize(11).text("ANNUAL ASBESTOS VISUAL EVALUATION", 22, 13); doc.font("Helvetica").fontSize(7).text(`${building.buildingNumber} · ${building.name} · ${building.client.name}`, 22, 28); doc.text(`BUILDING RECORD: /buildings/${building.id || ""}`, doc.page.width - 184, 28, { width: 162, align: "right" }); const fy = doc.page.height - 20; doc.strokeColor("#c8d1db").lineWidth(.5).moveTo(22, fy - 5).lineTo(doc.page.width - 22, fy - 5).stroke(); doc.fillColor("#546273").fontSize(6.5).text(`${building.buildingNumber} · PAGE ${page} OF ${total}`, 22, fy); }
+function cell(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, bold = false, white = false) { if (white) doc.rect(x, y, w, h).fill("#fff"); doc.strokeColor("#b8c4d0").lineWidth(white ? 1 : .5).rect(x, y, w, h).stroke(); doc.fillColor("#142033").font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(6.6).text(text, x + 2, y + 3, { width: w - 4, height: h - 4, ellipsis: false }); }
+function briefBand(doc: PDFKit.PDFDocument, building: PacketBuilding, g: ReturnType<typeof geometry>) { const x = g.margin; const y = 54; const w = g.width - x * 2; doc.fillColor("#142033").font("Helvetica-Bold").fontSize(15).text(`${building.buildingNumber} · ${building.name}`, x, y); doc.font("Helvetica").fontSize(8).text(`${building.client.name} · ${building.facility.name} · ${building.address || "Address not recorded"}`, x, y + 20); const summary = `${building.inventoryItems.length} materials · ${building.inventoryItems.filter(i => i.sampleLinks?.length).length} sampled · ${building.inventoryItems.filter(i => i.acmClassification === "pacm").length} PACM`; doc.fontSize(7).fillColor("#33415a").text(`${summary}\nLast inspection: ${formatDate(building.lastInspectionAt)} · Next due: ${formatDate(building.nextInspectionAt)}\nInspector: ____________________  Licence #: __________  Date: __________  In/out: __________`, x, y + 38, { width: w * .34 }); doc.font("Helvetica-Bold").fontSize(7).fillColor("#0a5f5b").text("WHAT TO CHECK", x + w * .36, y + 38); doc.font("Helvetica").fillColor("#33415a").text("ACM not damaged or deteriorated\nEncapsulation and jacketing intact\nLabels legible and visible\nInventory location is correct\nDO NOT DISTURB OR REPAIR ACM", x + w * .36, y + 50, { width: w * .27 }); const kx = x + w * .66; doc.font("Helvetica-Bold").fillColor("#0a5f5b").text("CODE KEY - WRITE ONE CODE", kx, y + 38); doc.font("Helvetica").fillColor("#33415a").text(conditionKey.map(([code, gloss]) => `${code}  ${gloss}`).join("\n"), kx, y + 50, { width: w * .34 }); doc.fontSize(6.5).fillColor("#33415a").text("Label: ✓ present · R replaced · M missing · - not required\n↺ location correction · + new ACM\nAny code other than ✓ requires a note. Blank = not inspected.", x, y + g.band - 40, { width: w }); }
 
-export async function buildInspectionPacket(building: PacketBuilding): Promise<Buffer> {
-  const doc = new PDFDocument({
-    size: "LETTER",
-    margin: 0,
-    autoFirstPage: true,
-    info: {
-      Title: `${building.buildingNumber} Inspection Packet`,
-      Author: building.organizationName,
-      Subject: "Asbestos field inspection packet",
-    },
-  });
-  const chunks: Buffer[] = [];
-  doc.on("data", (c) => chunks.push(c as Buffer));
-  const done = new Promise<Buffer>((resolve) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-  });
-
-  let page = 1;
-  const stamp = `Generated ${formatDate(new Date())}  ·  ${building.organizationName}`;
-
-  header(doc, "FIELD INSPECTION PACKET", stamp);
-  doc.fillColor("#0c1320").font("Helvetica-Bold").fontSize(20).text(`${building.buildingNumber}  ·  ${building.name}`, 36, 84);
-  doc.font("Helvetica").fontSize(11).fillColor("#3a4556").text(`${building.client.name}  ·  ${building.facility.name}`, 36, 110);
-
-  const meta = [
-    ["Client no.", building.client.clientNumber],
-    ["Facility ID", building.facility.facilityId],
-    ["Address", building.address || "—"],
-    ["Year built", building.yearConstructed ? String(building.yearConstructed) : "—"],
-    ["Area", building.squareFootage ? `${building.squareFootage.toLocaleString()} SF` : "—"],
-    ["Use", building.buildingUse || "—"],
-    ["Last inspection", formatDate(building.lastInspectionAt)],
-    ["Next inspection", formatDate(building.nextInspectionAt)],
-    ["Photography", building.photoPolicy === "prohibited" ? "NOT PERMITTED" : building.photoPolicy],
-    ["Floor plans attached", String(building.floorPlans.length)],
-  ];
-
-  const colW = (doc.page.width - 72) / 2;
-  meta.forEach((row, i) => {
-    const col = i % 2;
-    const rowi = Math.floor(i / 2);
-    const x = 36 + col * colW;
-    const y = 168 + rowi * 28;
-    doc.font("Helvetica").fontSize(7).fillColor("#6a7586").text(row[0].toUpperCase(), x, y);
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#0c1320").text(row[1], x, y + 10, { width: colW - 12 });
-  });
-
-  doc.font("Helvetica").fontSize(9).fillColor("#3a4556");
-  doc.text(`Inspection date: ____________________    Inspector: ____________________    Accreditation #: ____________________`, 36, 320);
-  doc.moveDown(1.2);
-  if (building.notes) {
-    doc.font("Helvetica-Oblique").fontSize(9).fillColor("#5b6778").text(building.notes, 36, 348, { width: doc.page.width - 72 });
-  }
-
-  doc.roundedRect(36, 400, doc.page.width - 72, 72, 6).fillAndStroke("#e6f6f5", "#b7e3df");
-  doc.fillColor("#0a6f6a").font("Helvetica-Bold").fontSize(9).text("PACKET CONTENTS", 48, 412);
-  doc.font("Helvetica").fontSize(9).fillColor("#0c1320").text(
-    `Cover  ·  Inventory field forms (${building.inventoryItems.length} materials)  ·  New material / sample / repair sheets  ·  ${building.floorPlans.length} floor plan drawing(s)`,
-    48,
-    430,
-    { width: doc.page.width - 96 }
-  );
-  doc.font("Helvetica").fontSize(8).fillColor("#5b6778").text(
-    "Inspectors complete condition and labeling in the field. Photographs required when condition worsens, repair is requested, material is removed, or a new material is discovered — unless photography is prohibited.",
-    48,
-    448,
-    { width: doc.page.width - 96 }
-  );
-
-  footer(doc, page, building.buildingNumber);
-
-  const items = building.inventoryItems;
-  const perPage = 12;
-  for (let start = 0; start < items.length; start += perPage) {
-    doc.addPage();
-    page += 1;
-    header(doc, "INVENTORY FIELD FORM", `${building.buildingNumber}  ·  page ${page}`);
-    const slice = items.slice(start, start + perPage);
-    const tableTop = 80;
-    const cols = [
-      { k: "id", w: 58, label: "ID" },
-      { k: "mat", w: 118, label: "MATERIAL" },
-      { k: "loc", w: 92, label: "LOCATION" },
-      { k: "qty", w: 48, label: "QTY" },
-      { k: "cls", w: 62, label: "CLASS" },
-      { k: "prev", w: 48, label: "PREV" },
-      { k: "curr", w: 78, label: "CURRENT COND." },
-      { k: "lab", w: 70, label: "LABEL" },
-    ];
-    let x = 36;
-    doc.rect(36, tableTop, doc.page.width - 72, 16).fill("#0b857f");
-    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(6);
-    cols.forEach((c) => {
-      doc.text(c.label, x + 2, tableTop + 5, { width: c.w - 4 });
-      x += c.w;
-    });
-
-    slice.forEach((it, idx) => {
-      const y = tableTop + 16 + idx * 46;
-      if (idx % 2 === 0) doc.rect(36, y, doc.page.width - 72, 46).fill("#f4f7fb");
-      let cx = 36;
-      const cells = [
-        it.inventoryCode,
-        it.materialDescription,
-        [it.floor, it.room].filter(Boolean).join(" · "),
-        formatQty(it.currentQuantity, it.quantityUnit),
-        ACM_LABELS[it.acmClassification] || it.acmClassification,
-        CONDITION_LABELS[it.condition] || it.condition,
-        "Good / Repair / Removed",
-        "Good / Replaced / Missing",
-      ];
-      cells.forEach((val, i) => {
-        doc.font(i === 0 ? "Helvetica-Bold" : "Helvetica").fontSize(7).fillColor("#0c1320");
-        doc.text(String(val).replace(/\s+/g, " ").slice(0, 42), cx + 2, y + 8, {
-          width: cols[i].w - 4,
-          lineBreak: false,
-        });
-        cx += cols[i].w;
-      });
-      doc.font("Helvetica").fontSize(6).fillColor("#6a7586").text("[ ] Good  [ ] Repair  [ ] Removed  [ ] Inacc.   [ ] Label OK  [ ] Replaced  [ ] Missing", 40, y + 26, { width: 520 });
-    });
-
-    doc.font("Helvetica").fontSize(8).fillColor("#5b6778").text("Notes for this sheet: _______________________________________________________________________________", 36, 700);
-    footer(doc, page, building.buildingNumber);
-  }
-
-  doc.addPage();
-  page += 1;
-  header(doc, "FIELD ADDITIONS", `${building.buildingNumber}`);
-  const blocks = [
-    ["New suspect materials discovered", "Floor / room / location    Material    Est. qty    Assume ACM / Sample now / Provisional"],
-    ["Samples collected", "Sample no.    Location    Material    Layers    COC no."],
-    ["Repair / response recommendations", "Inventory ID    Problem    Priority    Recommended action"],
-    ["Inspector certification", "I certify that this surveillance was performed in accordance with the applicable inspection template."],
-  ];
-  let by = 88;
-  blocks.forEach((b) => {
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#0b857f").text(b[0], 36, by);
-    doc.font("Helvetica").fontSize(8).fillColor("#6a7586").text(b[1], 36, by + 14, { width: doc.page.width - 72 });
-    doc.strokeColor("#c5d0dc").roundedRect(36, by + 32, doc.page.width - 72, 86, 4).stroke();
-    by += 132;
-  });
-  doc.font("Helvetica").fontSize(10).fillColor("#0c1320").text("Signature: _______________________________     Printed name: ________________________     Date: ____________", 36, 680);
-  footer(doc, page, building.buildingNumber);
-
-  for (const plan of building.floorPlans) {
-    doc.addPage();
-    page += 1;
-    header(doc, "FLOOR PLAN", plan.name);
-    doc.font("Helvetica").fontSize(9).fillColor("#3a4556").text(
-      `${building.buildingNumber} · ${building.name} · Drawing on file: ${plan.name}`,
-      36,
-      78
-    );
-    const boxX = 36;
-    const boxY = 98;
-    const boxW = doc.page.width - 72;
-    const boxH = 620;
-    doc.save().strokeColor("#0b857f").lineWidth(1).roundedRect(boxX, boxY, boxW, boxH, 4).stroke().restore();
-
-    const raster = /png|jpeg|jpg/.test(plan.mimeType);
-    const storedObject = raster && canReadStorageKey(building.organizationId, plan.storageKey)
-      ? await getStoredObject(plan.storageKey)
-      : null;
-    if (raster && storedObject) {
-      try {
-        doc.image(Buffer.from(await storedObject.arrayBuffer()), boxX + 8, boxY + 8, {
-          fit: [boxW - 16, boxH - 16], align: "center", valign: "center",
-        });
-      } catch {
-        doc.font("Helvetica").fontSize(10).fillColor("#b42318").text("Raster drawing could not be embedded.", boxX + 24, boxY + 40);
-      }
-    } else {
-      const key = `${plan.storageKey} ${plan.name}`;
-      const rooms =
-        /mh01|Main Hospital/i.test(key)
-          ? [
-              { x: 0.04, y: 0.14, w: 0.28, h: 0.26, label: "PUBLIC LOBBY", fill: "#e8f1fc" },
-              { x: 0.34, y: 0.24, w: 0.4, h: 0.1, label: "CORRIDOR A", fill: "#e6f6f5" },
-              { x: 0.34, y: 0.14, w: 0.2, h: 0.1, label: "OR SUITE", fill: "#fff4e0" },
-              { x: 0.04, y: 0.44, w: 0.34, h: 0.48, label: "MECH-01 TSI", fill: "#efe4cf" },
-              { x: 0.4, y: 0.36, w: 0.54, h: 0.26, label: "INPATIENT WING", fill: "#e7f7f2" },
-              { x: 0.4, y: 0.66, w: 0.26, h: 0.26, label: "BOILER TIE-IN", fill: "#fdecec" },
-              { x: 0.68, y: 0.66, w: 0.26, h: 0.26, label: "EAST CONNECTOR", fill: "#eef4ff" },
-            ]
-          : /mh03|Central Plant/i.test(key)
-            ? [
-                { x: 0.04, y: 0.14, w: 0.56, h: 0.78, label: "BOILER HALL", fill: "#efe4cf" },
-                { x: 0.64, y: 0.14, w: 0.3, h: 0.36, label: "ELECTRICAL", fill: "#eef1f5" },
-                { x: 0.64, y: 0.54, w: 0.3, h: 0.38, label: "COOLING / TRANSITE", fill: "#d5dce3" },
-              ]
-            : /lusa|Academic/i.test(key)
-              ? [
-                  { x: 0.04, y: 0.14, w: 0.92, h: 0.1, label: "MAIN CORRIDOR", fill: "#e6f6f5" },
-                  { x: 0.04, y: 0.28, w: 0.22, h: 0.2, label: "RM 101", fill: "#e8eeff" },
-                  { x: 0.28, y: 0.28, w: 0.22, h: 0.2, label: "RM 102", fill: "#e8eeff" },
-                  { x: 0.52, y: 0.28, w: 0.22, h: 0.2, label: "SCIENCE 214", fill: "#fff4e0" },
-                  { x: 0.04, y: 0.52, w: 0.7, h: 0.18, label: "9x9 TILE + MASTIC", fill: "#c5cdd6" },
-                  { x: 0.04, y: 0.74, w: 0.92, h: 0.18, label: "PIPE TUNNEL — DAMAGED TSI", fill: "#d7c7b0" },
-                ]
-              : [{ x: 0.08, y: 0.22, w: 0.84, h: 0.56, label: plan.name, fill: "#e6f6f5" }];
-      drawSchematic(doc, boxX + 8, boxY + 8, boxW - 16, boxH - 16, plan.name, rooms);
-    }
-
-    doc.font("Helvetica").fontSize(8).fillColor("#5b6778").text(
-      "Pins / highlighted rooms correspond to inventory, samples, or repairs associated with this drawing. Do not mark on the original file — annotate a field copy.",
-      36,
-      730,
-      { width: boxW }
-    );
-    footer(doc, page, building.buildingNumber);
-  }
-
-  doc.end();
-  return done;
-}
+export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> { const g = geometry(options); const pages = layoutRows(building.inventoryItems, options); const planCount = options.includeFloorPlans === false ? 0 : building.floorPlans.length; const total = packetPageCount(building.inventoryItems, options, building.floorPlans.length); const doc = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } }); const chunks: Buffer[] = []; doc.on("data", (chunk) => chunks.push(chunk as Buffer)); const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+  let finalY = 0; pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? 54 + g.band : 54; const headers = ["COND.", "LABEL", "ITEM #", "SAMPLE #", "LOCATION DESCRIPTION", "MATERIAL IDENTIFICATION", "EST. QUANTITY", "FIELD NOTES · CORRECTIONS"]; let x = g.margin; headers.forEach((title, col) => { doc.rect(x, y, g.cols[col], 14).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(5.7).text(title, x + 2, y + 4, { width: g.cols[col] - 4 }); x += g.cols[col]; }); y += 14; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, g.cols.reduce((a, b) => a + b, 0), 14).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(7).text(`${row.group}   ___ / ${page.rows.filter((candidate) => candidate.group === row.group).length} COMPLETE`, g.margin + 3, y + 4); y += 14; lastGroup = row.group; } let cx = g.margin; const location = row.members.length > 1 ? `${row.item.specificLocation ? `${row.item.specificLocation} - ` : ""}${row.members.map((member) => member.room || member.inventoryCode).join(", ")}` : [row.item.room, row.item.specificLocation].filter(Boolean).join(" · "); const data = ["", "", row.layer ? `↳ ${row.item.inventoryCode}` : row.members.length > 1 ? `${row.item.inventoryCode} +${row.members.length - 1}` : row.item.inventoryCode, row.sample, location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer || row.members.length > 1 ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit), ""]; data.forEach((value, col) => { cell(doc, value, cx, y, g.cols[col], row.height, col === 2, col < 2); cx += g.cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + g.cols[0] + g.cols[1] + g.cols[2] + g.cols[3], y + row.height / 2).lineTo(g.margin + g.cols.reduce((a, b) => a + b, 0), y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); if (index === pages.length - 1) finalY = y; });
+  const drawCloseout = (start: number) => { doc.fillColor("#142033").font("Helvetica-Bold").fontSize(9).text("FIELD CLOSEOUT & RECONCILIATION", 22, start); [["New ACM found - not on inventory", "Location · material · est. qty · UOM · assume ACM / sample now"], ["Repair / removal recommended", "Item # · problem · recommended action"], ["Sheet reconciliation", "GOOD ___  CODED ___  BLANK ___  PHOTOS ___  Total must equal packet item count"]].forEach(([title, hint], index) => { const y = start + 18 + index * 58; doc.font("Helvetica-Bold").fontSize(7).fillColor("#0a5f5b").text(title, 22, y); doc.font("Helvetica").fontSize(6).fillColor("#546273").text(hint, 22, y + 10); doc.strokeColor("#b8c4d0").rect(22, y + 20, g.width - 44, 28).stroke(); }); doc.fillColor("#142033").fontSize(7).text("Overall: ☐ good condition  ☐ in need of repair  ☐ poor condition  Action required ☐ Yes ☐ No\nInspector: ____________________  Printed name/licence: ____________________  Date: __________  Transcribed by: __________", 22, start + 198); };
+  if (closeoutFits(pages, g)) drawCloseout(finalY + 12); else { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 1, total); drawCloseout(58); }
+  if (options.includeFloorPlans !== false) for (const [planIndex, plan] of building.floorPlans.entries()) { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 2 + planIndex, total); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(12).text(`FLOOR PLAN · ${plan.name}`, 22, 58); const x = 22, y = 82, w = g.width - 44, h = g.height - 124; doc.strokeColor("#9ba8b8").rect(x, y, w, h).stroke(); const raster = /png|jpe?g/.test(plan.mimeType); const object = raster && canReadStorageKey(building.organizationId, plan.storageKey) ? await getStoredObject(plan.storageKey) : null; if (object) { try { doc.image(Buffer.from(await object.arrayBuffer()), x + 8, y + 8, { fit: [w - 16, h - 16], align: "center", valign: "center" }); } catch { doc.font("Helvetica").fontSize(9).fillColor("#b42318").text("Drawing could not be embedded.", x + 16, y + 16); } } else { doc.font("Helvetica").fontSize(10).fillColor("#6a7586").text("No drawing on file - use this ruled grid for field annotations.", x + 16, y + 16); for (let gx = x; gx < x + w; gx += 24) doc.moveTo(gx, y).lineTo(gx, y + h).strokeColor("#e2e8f0").stroke(); for (let gy = y; gy < y + h; gy += 24) doc.moveTo(x, gy).lineTo(x + w, gy).strokeColor("#e2e8f0").stroke(); } }
+  doc.end(); return done; }
