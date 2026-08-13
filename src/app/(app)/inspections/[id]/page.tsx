@@ -1,11 +1,25 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ConditionChip, Meta, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+type InspectionMaterialRow = {
+  id: string;
+  inventoryItemId: string;
+  previousCondition: string | null;
+  currentCondition: string | null;
+  currentLabel: string | null;
+  notes: string | null;
+  inventoryCode: string;
+  materialDescription: string;
+  floor: string | null;
+  room: string | null;
+};
 
 export default async function InspectionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,12 +30,31 @@ export default async function InspectionDetail({ params }: { params: Promise<{ i
     include: {
       building: { include: { client: true } },
       inspector: true,
-      items: { include: { inventoryItem: true } },
       signatures: true,
       discoveries: true,
     },
   });
   if (!insp) notFound();
+
+  // A nested material include creates a parameter list larger than D1 allows
+  // for big historical inspections. Keep this as one joined query instead.
+  const items = await db.$queryRaw<InspectionMaterialRow[]>(Prisma.sql`
+    SELECT
+      ii."id" AS "id",
+      ii."inventoryItemId" AS "inventoryItemId",
+      ii."previousCondition" AS "previousCondition",
+      ii."currentCondition" AS "currentCondition",
+      ii."currentLabel" AS "currentLabel",
+      ii."notes" AS "notes",
+      inv."inventoryCode" AS "inventoryCode",
+      inv."materialDescription" AS "materialDescription",
+      inv."floor" AS "floor",
+      inv."room" AS "room"
+    FROM "InspectionItem" ii
+    INNER JOIN "InventoryItem" inv ON inv."id" = ii."inventoryItemId"
+    WHERE ii."inspectionId" = ${id}
+    ORDER BY ii."id" ASC
+  `);
 
   return (
     <div>
@@ -50,11 +83,11 @@ export default async function InspectionDetail({ params }: { params: Promise<{ i
           <table className="data">
             <thead><tr><th>ID</th><th>Material</th><th>Location</th><th>Previous</th><th>Current</th><th>Label</th><th>Notes</th></tr></thead>
             <tbody>
-              {insp.items.map((it) => (
+              {items.map((it) => (
                 <tr key={it.id}>
-                  <td><Link href={`/inventory/${it.inventoryItemId}`} className="mono-id text-teal-dim">{it.inventoryItem.inventoryCode}</Link></td>
-                  <td>{it.inventoryItem.materialDescription}</td>
-                  <td>{it.inventoryItem.floor} · {it.inventoryItem.room}</td>
+                  <td><Link href={`/inventory/${it.inventoryItemId}`} className="mono-id text-teal-dim">{it.inventoryCode}</Link></td>
+                  <td>{it.materialDescription}</td>
+                  <td>{it.floor} · {it.room}</td>
                   <td>{it.previousCondition}</td>
                   <td>{it.currentCondition ? <ConditionChip value={it.currentCondition} /> : "—"}</td>
                   <td>{it.currentLabel || "—"}</td>

@@ -1,10 +1,26 @@
 import { notFound, redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { PrintButton } from "@/components/forms/print-button";
 
 export const dynamic = "force-dynamic";
+
+type PrintItemRow = {
+  id: string;
+  previousCondition: string | null;
+  currentCondition: string | null;
+  previousLabel: string | null;
+  currentLabel: string | null;
+  notes: string | null;
+  inventoryCode: string;
+  materialDescription: string;
+  floor: string | null;
+  room: string | null;
+  currentQuantity: number | null;
+  quantityUnit: string;
+};
 
 export default async function InspectionPrint({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,11 +31,29 @@ export default async function InspectionPrint({ params }: { params: Promise<{ id
     include: {
       building: { include: { client: true } },
       inspector: true,
-      items: { include: { inventoryItem: true } },
       signatures: true,
     },
   });
   if (!insp) notFound();
+  const items = await db.$queryRaw<PrintItemRow[]>(Prisma.sql`
+    SELECT
+      ii."id" AS "id",
+      ii."previousCondition" AS "previousCondition",
+      ii."currentCondition" AS "currentCondition",
+      ii."previousLabel" AS "previousLabel",
+      ii."currentLabel" AS "currentLabel",
+      ii."notes" AS "notes",
+      inv."inventoryCode" AS "inventoryCode",
+      inv."materialDescription" AS "materialDescription",
+      inv."floor" AS "floor",
+      inv."room" AS "room",
+      inv."currentQuantity" AS "currentQuantity",
+      inv."quantityUnit" AS "quantityUnit"
+    FROM "InspectionItem" ii
+    INNER JOIN "InventoryItem" inv ON inv."id" = ii."inventoryItemId"
+    WHERE ii."inspectionId" = ${id}
+    ORDER BY ii."id" ASC
+  `);
 
   return (
     <div className="mx-auto max-w-4xl bg-white p-8">
@@ -36,13 +70,13 @@ export default async function InspectionPrint({ params }: { params: Promise<{ id
           </tr>
         </thead>
         <tbody>
-          {insp.items.map((it) => (
+          {items.map((it) => (
             <tr key={it.id}>
-              <td className="mono-id">{it.inventoryItem.inventoryCode}</td>
-              <td>{it.inventoryItem.materialDescription}</td>
-              <td>{it.inventoryItem.floor}</td>
-              <td>{it.inventoryItem.room}</td>
-              <td>{it.inventoryItem.currentQuantity} {it.inventoryItem.quantityUnit}</td>
+              <td className="mono-id">{it.inventoryCode}</td>
+              <td>{it.materialDescription}</td>
+              <td>{it.floor}</td>
+              <td>{it.room}</td>
+              <td>{it.currentQuantity} {it.quantityUnit}</td>
               <td>{it.previousCondition}</td>
               <td className="min-w-24">{it.currentCondition || "☐ Good  ☐ Needs repair  ☐ Removed  ☐ Inaccessible"}</td>
               <td>{it.previousLabel}</td>
