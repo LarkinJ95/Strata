@@ -194,7 +194,7 @@ export default async function BuildingPage({
           <div className="flex shrink-0 flex-wrap gap-2 xl:flex-nowrap">
             {!user.isClient && <StartInspectionButton buildingId={building.id} />}
             <Link href={`/buildings/${building.id}/packet`} className="btn btn-ghost whitespace-nowrap text-xs">Field packet</Link>
-            <details className="relative"><summary className="btn btn-ghost cursor-pointer whitespace-nowrap text-xs">Generate ▾</summary><div className="absolute right-0 z-10 mt-1 grid min-w-48 gap-1 rounded-xl border border-[rgba(16,36,72,0.1)] bg-white p-2 shadow-lg"><a href={`/api/buildings/${building.id}/packet`} download={`${building.name} Inspection Packet.pdf`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2">Download inspection packet PDF</a><Link href={`/buildings/${building.id}/management-plan`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2">Management plan</Link></div></details>
+            <details className="relative"><summary className="btn btn-ghost cursor-pointer whitespace-nowrap text-xs">Generate ▾</summary><div className="absolute right-0 z-10 mt-1 grid min-w-48 gap-1 rounded-xl border border-[rgba(16,36,72,0.1)] bg-white p-2 shadow-lg"><a href={`/api/buildings/${building.id}/packet?includeFloorPlans=true&packetVersion=20260813-2`} download={`${building.name} Inspection Packet.pdf`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2">Download inspection packet PDF</a><Link href={`/buildings/${building.id}/management-plan`} className="rounded-lg px-2 py-1.5 text-xs hover:bg-paper-2">Management plan</Link></div></details>
           </div>
         </div>
         {!user.isClient && (

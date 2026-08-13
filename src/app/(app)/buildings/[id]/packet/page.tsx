@@ -30,7 +30,9 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
   const unplacedFloors = packetItems.filter((item) => item.floorLevel === UNASSIGNED_LEVEL).length;
   const floors = [...new Set(b.inventoryItems.map((item) => item.floor).filter(Boolean))] as string[];
   const functionalAreas = [...new Map(b.inventoryItems.flatMap((item) => item.functionalArea ? [[item.functionalArea.id, item.functionalArea]] : [])).values()];
-  const query = new URLSearchParams(Object.entries(options).reduce<Record<string, string>>((out, [key, value]) => { if (value !== undefined) out[key] = String(value); return out; }, {})).toString();
+  const packetParams = new URLSearchParams(Object.entries(options).reduce<Record<string, string>>((out, [key, value]) => { if (value !== undefined) out[key] = String(value); return out; }, {}));
+  packetParams.set("packetVersion", "20260813-2");
+  const query = packetParams.toString();
 
   return (
     <div>
