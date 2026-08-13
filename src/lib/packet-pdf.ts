@@ -18,11 +18,12 @@ const conditionKey = [["OK", "No change since last inspection"], ["F", CONDITION
 const labelKey = [["OK", "Label present, legible"], ["R", "Replaced — you applied a new label"], ["M", "Missing — could not replace"], ["N", "Cannot reach to check or re-tag"], ["–", "Not required — concealed"]];
 
 // Shared vertical metrics so pagination and rendering can never drift apart.
-const TABLE_TOP = 37, COL_HEADER = 14, GROUP_HEADER = 14, FOOT_RESERVE = 44, CELL_PAD = 5;
-export const COLUMN_HEADERS = ["COND.", "LABEL", "ITEM #", "SAMPLE #", "LOCATION DESCRIPTION", "MATERIAL IDENTIFICATION", "EST. QUANTITY", "FIELD NOTES · CORRECTIONS"];
+const TABLE_TOP = 52, COL_HEADER = 14, GROUP_HEADER = 14, FOOT_RESERVE = 44, CELL_PAD = 5;
+export const COLUMN_HEADERS = ["COND.", "LABEL", "ITEM #", "SAMPLE #", "LOCATION", "MATERIAL", "EST. QTY.", "FIELD NOTES · CORRECTIONS"];
 const LOCATION_COL = 4;
-// Location description is the only column allowed to wrap; the rest are sized to their
-// widest value so a material name or sample number never breaks across lines.
+const MATERIAL_COL = 5;
+// Location gets first claim on available width so it stays on one line whenever the
+// printable sheet can accommodate it. Material wraps only when both cannot fit.
 const SIZED = [
   { col: 2, min: 26, max: 90, floor: 26 },
   { col: 3, min: 32, max: 110, floor: 32 },
@@ -31,7 +32,7 @@ const SIZED = [
 ];
 const MIN_LOCATION = 110, MIN_NOTES = 70;
 
-function geometry(options: PacketOptions) { const portrait = (options.orientation ?? "portrait") === "portrait"; const [w, h] = SIZES[options.paper ?? "letter"]; const width = portrait ? w : h; const height = portrait ? h : w; const compact = options.density === "compact"; const font = { body: compact ? 6.5 : 7.5, head: compact ? 6 : 6.5, group: compact ? 7 : 7.5 }; return { width, height, portrait, font, margin: 22, row: compact ? 12.5 : 14, band: 92 }; }
+function geometry(options: PacketOptions) { const portrait = (options.orientation ?? "portrait") === "portrait"; const [w, h] = SIZES[options.paper ?? "letter"]; const width = portrait ? w : h; const height = portrait ? h : w; const compact = options.density === "compact"; const font = { body: compact ? 6.5 : 7, head: compact ? 6 : 6.5, group: compact ? 7 : 7.5 }; return { width, height, portrait, font, margin: 22, row: compact ? 12.5 : 14, band: 92 }; }
 
 // PDFKit measures text exactly; a character-count estimate over-allocated by ~40%, which
 // cost a whole page on a building the size of 1707.
@@ -42,28 +43,32 @@ function textWidth(text: string, size: number, bold = false) { if (!text) return
 
 type RowText = { code: string; sample: string; location: string; material: string; quantity: string };
 
-/** Column widths sized to this building's own content, with location taking the slack. */
+/** Column widths sized to this building's content, with Location receiving first priority. */
 function columnWidths(text: RowText[], g: ReturnType<typeof geometry>): number[] {
   // Write-in cells are sized to hold a handwritten code, but never narrower than their
   // own column label — a wrapped "LABEL" header reads as two broken words.
   const mark = Math.ceil(Math.max(g.portrait ? 24 : 26, textWidth(COLUMN_HEADERS[0], g.font.head, true) + 7, textWidth(COLUMN_HEADERS[1], g.font.head, true) + 7));
-  const cols = [mark, mark, 0, 0, 0, 0, 0, 0];
+  const cols = [mark, mark, 0, 0, MIN_LOCATION, 0, 0, MIN_NOTES];
   const values: Record<number, string[]> = { 2: text.map((t) => t.code), 3: text.map((t) => t.sample), 5: text.map((t) => t.material), 6: text.map((t) => t.quantity) };
+  const desired: Record<number, number> = {};
   for (const { col, min, max } of SIZED) {
     const widest = Math.max(textWidth(COLUMN_HEADERS[col], g.font.head, true), ...values[col].map((value) => textWidth(value, g.font.body)));
-    cols[col] = Math.ceil(Math.min(max, Math.max(min, widest + 7)));
+    desired[col] = Math.ceil(Math.min(max, Math.max(min, widest + 7)));
+    cols[col] = Math.ceil(Math.min(max, Math.max(min, textWidth(COLUMN_HEADERS[col], g.font.head, true) + 7)));
   }
   const available = g.width - g.margin * 2;
-  let slack = available - cols.reduce((sum, width) => sum + width, 0);
-  // Only when a building's own text cannot fit the sheet: give back width from the widest
-  // sized column first, so the location lane keeps a usable minimum.
-  for (const { col, floor } of [...SIZED].sort((a, b) => cols[b.col] - cols[a.col])) {
-    if (slack >= MIN_LOCATION + MIN_NOTES) break;
-    const give = Math.min(cols[col] - floor, MIN_LOCATION + MIN_NOTES - slack);
-    cols[col] -= give; slack += give;
+  let remaining = available - cols.reduce((sum, width) => sum + width, 0);
+  const locationDesired = Math.ceil(Math.max(MIN_LOCATION, textWidth(COLUMN_HEADERS[LOCATION_COL], g.font.head, true) + 7, ...text.map((value) => textWidth(value.location, g.font.body) + 7)));
+  const locationExtra = Math.min(remaining, locationDesired - MIN_LOCATION);
+  cols[LOCATION_COL] += locationExtra;
+  remaining -= locationExtra;
+  // Preserve exact identifiers and quantities next, then give remaining width to Material.
+  for (const col of [2, 3, 6, MATERIAL_COL]) {
+    const extra = Math.min(remaining, desired[col] - cols[col]);
+    cols[col] += extra;
+    remaining -= extra;
   }
-  const notes = Math.max(MIN_NOTES, Math.min(160, Math.round(slack * 0.36)));
-  cols[7] = notes; cols[LOCATION_COL] = slack - notes;
+  cols[7] += Math.min(90, remaining);
   return cols;
 }
 
@@ -83,7 +88,7 @@ export function packetLayout(items: PacketItem[], options: PacketOptions = {}): 
   const draft: { entry: (typeof decorated)[number]; group: string; layer: boolean; text: RowText }[] = []; let prior = "";
   for (const entry of decorated) { const item = entry.item; const group = entry.area ? `${entry.label} · ${entry.area}` : entry.label; const sample = item.sampleLinks?.[0]?.sample.sampleNumber || (item.acmClassification === "pacm" ? "PACM" : ""); const location = [item.room, item.specificLocation].filter(Boolean).join(" · "); const stem = sample.replace(/[A-Za-z]+$/, ""); const layer = Boolean(options.nestLayers && stem && prior === `${group}|${stem}|${location}`); prior = `${group}|${stem}|${location}`; draft.push({ entry, group, layer, text: { code: item.inventoryCode, sample, location, material: `${item.materialDescription}${layer ? " (layer)" : ""}`, quantity: layer ? "-" : formatQty(item.currentQuantity, item.quantityUnit) } }); }
   const cols = columnWidths(draft.map((row) => row.text), g);
-  const rows: Row[] = draft.map(({ entry, group, layer, text }) => ({ item: entry.item, members: [entry.item], group, layer, sample: text.sample, previous: entry.item.inspectionItems?.[0]?.previousCondition || entry.item.condition, height: Math.max(g.row, textHeight(text.location, cols[LOCATION_COL] - 4, g.font.body) + CELL_PAD) }));
+  const rows: Row[] = draft.map(({ entry, group, layer, text }) => ({ item: entry.item, members: [entry.item], group, layer, sample: text.sample, previous: entry.item.inspectionItems?.[0]?.previousCondition || entry.item.condition, height: Math.max(g.row, textHeight(text.location, cols[LOCATION_COL] - 4, g.font.body) + CELL_PAD, textHeight(text.material, cols[MATERIAL_COL] - 4, g.font.body) + CELL_PAD) }));
   const pages: PacketPage[] = []; let page: PacketPage = { rows: [], first: true }; let y = TABLE_TOP + g.band + COL_HEADER; const usable = g.height - FOOT_RESERVE;
   for (const row of rows) { const newGroup = page.rows.length === 0 || page.group !== row.group; const needed = row.height + (newGroup ? GROUP_HEADER : 0); if (y + needed > usable && page.rows.length) { pages.push(page); page = { rows: [], first: false }; y = TABLE_TOP + COL_HEADER; } if (newGroup) { page.group = row.group; y += GROUP_HEADER; } page.rows.push(row); y += row.height; }
   if (page.rows.length || !pages.length) pages.push(page); return { cols, pages };
@@ -95,7 +100,7 @@ export function layoutRows(items: PacketItem[], options: PacketOptions = {}): Pa
 /** Exact packet page count used by both the generated PDF and preview. */
 export function packetPageCount(items: PacketItem[], options: PacketOptions = {}, floorPlanCount = 0) { return layoutRows(items, options).length + (options.includeFloorPlans === false ? 0 : floorPlanCount); }
 
-function header(doc: PDFKit.PDFDocument, building: PacketBuilding, page: number, total: number) { const w = doc.page.width; doc.fillColor("#101828").font("Helvetica-Bold").fontSize(11).text("ANNUAL ASBESTOS VISUAL EVALUATION", 0, 8, { width: w, align: "center" }); doc.font("Helvetica").fontSize(7).fillColor("#546273").text(`${building.buildingNumber} · ${building.name} · ${building.client.name}`, 0, 21, { width: w, align: "center" }); doc.strokeColor("#c8d1db").lineWidth(.5).moveTo(22, 33).lineTo(w - 22, 33).stroke(); const fy = doc.page.height - 20; doc.moveTo(22, fy - 5).lineTo(w - 22, fy - 5).stroke(); doc.fillColor("#546273").fontSize(6.5).text(`${building.buildingNumber} · PAGE ${page} OF ${total}`, 0, fy, { width: w, align: "center" }); }
+function header(doc: PDFKit.PDFDocument, building: PacketBuilding, page: number, total: number) { const w = doc.page.width; doc.fillColor("#101828").font("Helvetica-Bold").fontSize(11).text("ANNUAL ASBESTOS VISUAL EVALUATION", 0, 20, { width: w, align: "center" }); doc.font("Helvetica").fontSize(7).fillColor("#546273").text(`${building.buildingNumber} · ${building.name} · ${building.client.name}`, 0, 34, { width: w, align: "center" }); doc.strokeColor("#c8d1db").lineWidth(.5).moveTo(22, 47).lineTo(w - 22, 47).stroke(); const fy = doc.page.height - 20; doc.moveTo(22, fy - 5).lineTo(w - 22, fy - 5).stroke(); doc.fillColor("#546273").fontSize(6.5).text(`${building.buildingNumber} · PAGE ${page} OF ${total}`, 0, fy, { width: w, align: "center" }); }
 type CellStyle = { size: number; bold?: boolean; white?: boolean; wrap?: boolean; align?: "left" | "center" | "right" };
 /** Draws one cell with its text vertically centred; only wrapping columns break lines. */
 function cell(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, style: CellStyle) {
@@ -104,11 +109,11 @@ function cell(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: nu
   if (!text) return;
   const inner = w - 4;
   doc.fillColor("#142033").font(style.bold ? "Helvetica-Bold" : "Helvetica").fontSize(style.size);
-  const height = style.wrap ? (doc.heightOfString(text, { width: inner }) as number) : (doc.currentLineHeight() as number);
+  const height = doc.heightOfString(text, { width: inner, lineBreak: style.wrap ?? false }) as number;
   doc.text(text, x + 2, y + Math.max(1.5, (h - height) / 2), { width: inner, align: style.align ?? "left", lineBreak: style.wrap ?? false, ellipsis: false });
 }
 function briefBand(doc: PDFKit.PDFDocument, _building: PacketBuilding, g: ReturnType<typeof geometry>) {
-  const x = g.margin; const top = 42; const w = g.width - x * 2; const half = w / 2;
+  const x = g.margin; const top = 57; const w = g.width - x * 2; const half = w / 2;
   const line = 8.6; const codeW = 17;
   const column = (label: string, entries: string[][], cx: number) => {
     doc.font("Helvetica-Bold").fontSize(g.font.head).fillColor("#0a5f5b").text(label, cx, top, { width: half - 8 });
@@ -124,6 +129,6 @@ function briefBand(doc: PDFKit.PDFDocument, _building: PacketBuilding, g: Return
 }
 
 export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> { const g = geometry(options); const { cols, pages } = packetLayout(building.inventoryItems, options); const tableWidth = cols.reduce((sum, width) => sum + width, 0); const total = pages.length + (options.includeFloorPlans === false ? 0 : building.floorPlans.length); const doc: PDFKit.PDFDocument = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } }); const chunks: Buffer[] = []; doc.on("data", (chunk: Uint8Array) => chunks.push(Buffer.from(chunk))); const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
-  pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? TABLE_TOP + g.band : TABLE_TOP; let x = g.margin; COLUMN_HEADERS.forEach((title, col) => { doc.rect(x, y, cols[col], COL_HEADER).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(g.font.head); const labelHeight = doc.heightOfString(title, { width: cols[col] - 4 }) as number; doc.text(title, x + 2, y + Math.max(1.5, (COL_HEADER - labelHeight) / 2), { width: cols[col] - 4, align: "center", lineBreak: false }); x += cols[col]; }); y += COL_HEADER; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, tableWidth, GROUP_HEADER).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(g.font.group); doc.text(row.group, g.margin + 3, y + Math.max(1.5, (GROUP_HEADER - (doc.currentLineHeight() as number)) / 2), { width: tableWidth - 6, lineBreak: false }); y += GROUP_HEADER; lastGroup = row.group; } let cx = g.margin; const location = [row.item.room, row.item.specificLocation].filter(Boolean).join(" · "); const data = ["", "", row.item.inventoryCode, row.sample, location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit), ""]; data.forEach((value, col) => { cell(doc, value, cx, y, cols[col], row.height, { size: g.font.body, bold: col === 2, white: col < 2, wrap: col === LOCATION_COL, align: col <= 3 ? "center" : "left" }); cx += cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + cols[0] + cols[1] + cols[2] + cols[3], y + row.height / 2).lineTo(g.margin + tableWidth, y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); });
-  if (options.includeFloorPlans !== false) for (const [planIndex, plan] of building.floorPlans.entries()) { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 1 + planIndex, total); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(12).text(`FLOOR PLAN · ${plan.name}`, 22, 50); const x = 22, y = 70, w = g.width - 44, h = g.height - 112; doc.strokeColor("#9ba8b8").rect(x, y, w, h).stroke(); const raster = /png|jpe?g/.test(plan.mimeType); const object = raster && canReadStorageKey(building.organizationId, plan.storageKey) ? await getStoredObject(plan.storageKey) : null; if (object) { try { doc.image(Buffer.from(await object.arrayBuffer()), x + 8, y + 8, { fit: [w - 16, h - 16], align: "center", valign: "center" }); } catch { doc.font("Helvetica").fontSize(9).fillColor("#b42318").text("Drawing could not be embedded.", x + 16, y + 16); } } else { doc.font("Helvetica").fontSize(10).fillColor("#6a7586").text("No drawing on file - use this ruled grid for field annotations.", x + 16, y + 16); for (let gx = x; gx < x + w; gx += 24) doc.moveTo(gx, y).lineTo(gx, y + h).strokeColor("#e2e8f0").stroke(); for (let gy = y; gy < y + h; gy += 24) doc.moveTo(x, gy).lineTo(x + w, gy).strokeColor("#e2e8f0").stroke(); } }
+  pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? TABLE_TOP + g.band : TABLE_TOP; let x = g.margin; COLUMN_HEADERS.forEach((title, col) => { doc.rect(x, y, cols[col], COL_HEADER).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(g.font.head); const labelHeight = doc.heightOfString(title, { width: cols[col] - 4 }) as number; doc.text(title, x + 2, y + Math.max(1.5, (COL_HEADER - labelHeight) / 2), { width: cols[col] - 4, align: "center", lineBreak: false }); x += cols[col]; }); y += COL_HEADER; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, tableWidth, GROUP_HEADER).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(g.font.group); doc.text(row.group, g.margin + 3, y + Math.max(1.5, (GROUP_HEADER - (doc.currentLineHeight() as number)) / 2), { width: tableWidth - 6, lineBreak: false }); y += GROUP_HEADER; lastGroup = row.group; } let cx = g.margin; const location = [row.item.room, row.item.specificLocation].filter(Boolean).join(" · "); const data = ["", "", row.item.inventoryCode, row.sample, location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit), ""]; data.forEach((value, col) => { cell(doc, value, cx, y, cols[col], row.height, { size: g.font.body, bold: col === 2, white: col < 2, wrap: col === LOCATION_COL || col === MATERIAL_COL, align: col <= 3 ? "center" : "left" }); cx += cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + cols[0] + cols[1] + cols[2] + cols[3], y + row.height / 2).lineTo(g.margin + tableWidth, y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); });
+  if (options.includeFloorPlans !== false) for (const [planIndex, plan] of building.floorPlans.entries()) { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 1 + planIndex, total); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(12).text(`FLOOR PLAN · ${plan.name}`, 22, 60); const x = 22, y = 80, w = g.width - 44, h = g.height - 122; doc.strokeColor("#9ba8b8").rect(x, y, w, h).stroke(); const raster = /png|jpe?g/.test(plan.mimeType); const object = raster && canReadStorageKey(building.organizationId, plan.storageKey) ? await getStoredObject(plan.storageKey) : null; if (object) { try { doc.image(Buffer.from(await object.arrayBuffer()), x + 8, y + 8, { fit: [w - 16, h - 16], align: "center", valign: "center" }); } catch { doc.font("Helvetica").fontSize(9).fillColor("#b42318").text("Drawing could not be embedded.", x + 16, y + 16); } } else { doc.font("Helvetica").fontSize(10).fillColor("#6a7586").text("No drawing on file - use this ruled grid for field annotations.", x + 16, y + 16); for (let gx = x; gx < x + w; gx += 24) doc.moveTo(gx, y).lineTo(gx, y + h).strokeColor("#e2e8f0").stroke(); for (let gy = y; gy < y + h; gy += 24) doc.moveTo(x, gy).lineTo(x + w, gy).strokeColor("#e2e8f0").stroke(); } }
   doc.end(); return done; }
