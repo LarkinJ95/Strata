@@ -299,6 +299,7 @@ model BuildingArea {
   building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   floor      BuildingFloor? @relation(fields: [floorId], references: [id])
   paintSamples PaintSample[]
+  inventoryItems InventoryItem[] @relation("InventoryFunctionalArea")
 
   @@index([buildingId])
 }
@@ -331,7 +332,6 @@ model PaintSample {
 
   building Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   floorRec BuildingFloor? @relation(fields: [floorId], references: [id])
-  inventoryItems InventoryItem[] @relation("InventoryFunctionalArea")
   area     BuildingArea?  @relation(fields: [areaId], references: [id])
 
   @@unique([buildingId, sampleNumber])
