@@ -1,16 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { uploadBuildingDocument } from "@/actions/mutations";
+import { DropFileInput } from "@/components/forms/drop-file-input";
 
 export function DocumentUpload({ buildingId }: { buildingId: string }) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [pending, start] = useTransition();
   const [message, setMessage] = useState("");
+  const [resetToken, setResetToken] = useState(0);
 
   return (
     <form
+      ref={formRef}
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
@@ -20,7 +24,8 @@ export function DocumentUpload({ buildingId }: { buildingId: string }) {
         start(async () => {
           try {
             await uploadBuildingDocument(data);
-            event.currentTarget.reset();
+            formRef.current?.reset();
+            setResetToken((token) => token + 1);
             setMessage("Document stored.");
             router.refresh();
           } catch (error) {
@@ -32,7 +37,7 @@ export function DocumentUpload({ buildingId }: { buildingId: string }) {
       <div className="grid gap-3 md:grid-cols-2">
         <div className="field md:col-span-2">
           <label>File</label>
-          <input name="file" type="file" required />
+          <DropFileInput name="file" resetToken={resetToken} />
         </div>
         <div className="field">
           <label>Document name</label>

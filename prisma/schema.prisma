@@ -331,6 +331,7 @@ model PaintSample {
 
   building Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   floorRec BuildingFloor? @relation(fields: [floorId], references: [id])
+  inventoryItems InventoryItem[] @relation("InventoryFunctionalArea")
   area     BuildingArea?  @relation(fields: [areaId], references: [id])
 
   @@unique([buildingId, sampleNumber])
@@ -381,6 +382,7 @@ model InventoryItem {
   facilityId           String
   buildingId           String
   homogeneousAreaId    String?
+  functionalAreaId     String?
   inventoryCode        String
   internalCode         String?
   floor                String?
@@ -425,6 +427,7 @@ model InventoryItem {
   client           Client       @relation(fields: [clientId], references: [id])
   building         Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   homogeneousArea  HomogeneousArea? @relation(fields: [homogeneousAreaId], references: [id])
+  functionalArea   BuildingArea? @relation("InventoryFunctionalArea", fields: [functionalAreaId], references: [id], onDelete: SetNull)
   quantityHistory  InventoryQuantityHistory[]
   conditionHistory InventoryConditionHistory[]
   labelHistory     InventoryLabelHistory[]
@@ -972,6 +975,8 @@ model FloorPlanMarker {
   label         String?
   geometryJson  String?
   floorPlan     FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([floorPlanId, recordType, recordId])
 }
 
 model Task {

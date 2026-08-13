@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Beaker, Camera, FileText, History, MapPin, ShieldCheck, Wrench } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { AcmChip, ConditionChip, Meta, Panel, SectionTitle } from "@/components/ui/primitives";
@@ -14,6 +15,14 @@ import { fileUrl } from "@/lib/files";
 export const dynamic = "force-dynamic";
 
 const SECTIONS = ["status", "photos", "samples", "repairs", "documents", "history"] as const;
+const SECTION_META = {
+  status: { label: "Current status", icon: ShieldCheck },
+  photos: { label: "Visual documentation", icon: Camera },
+  samples: { label: "Supporting evidence", icon: Beaker },
+  repairs: { label: "Repairs & removals", icon: Wrench },
+  documents: { label: "Documentation", icon: FileText },
+  history: { label: "Full timeline", icon: History },
+} as const;
 
 export default async function InventoryDetail({
   params,
@@ -29,7 +38,7 @@ export default async function InventoryDetail({
   const item = await db.inventoryItem.findFirst({
     where: { id, organizationId: user.organizationId, ...(user.clientId ? { clientId: user.clientId } : {}) },
     include: {
-      building: { include: { client: true, facility: true } },
+      building: { include: { client: true, facility: true, areas: { orderBy: { name: "asc" }, include: { floorRec: { select: { name: true } } } } } },
       homogeneousArea: true,
       quantityHistory: { orderBy: { changedAt: "asc" } },
       conditionHistory: { orderBy: { changedAt: "asc" } },
@@ -44,6 +53,8 @@ export default async function InventoryDetail({
     },
   });
   if (!item) notFound();
+  const areaRows = await db.$queryRawUnsafe<Array<{ functionalAreaId: string | null }>>('SELECT "functionalAreaId" FROM "InventoryItem" WHERE "id" = ?', item.id);
+  const itemWithArea = { ...item, functionalAreaId: areaRows[0]?.functionalAreaId ?? null };
 
   const samplesForLink = !user.isClient ? await db.sample.findMany({ where: { organizationId: user.organizationId, buildingId: item.buildingId }, select: { id: true, sampleNumber: true, material: true }, orderBy: { sampleNumber: "asc" } }) : [];
 
@@ -55,7 +66,7 @@ export default async function InventoryDetail({
   return (
     <div>
       <div className="crumb mb-3"><Link href="/clients">Clients</Link><span> › </span><Link href={`/clients/${item.clientId}`}>{item.building.client.name}</Link><span> › </span><Link href={`/buildings/${item.buildingId}`}>{item.building.name}</Link><span> › </span><span className="text-ink">{item.inventoryCode}</span></div>
-      <Panel className="mb-4 p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h1 className="font-display text-2xl font-semibold">{item.materialDescription}</h1><AcmChip value={item.acmClassification} /><ConditionChip value={item.condition} /></div><p className="mt-1 text-sm text-ink-3">{item.inventoryCode}{item.internalCode ? ` · ${item.internalCode}` : ""} · {[item.floor, item.room, item.area, item.specificLocation].filter(Boolean).join(" · ")}</p></div><div className="flex gap-2"><Link href={`/inventory/${item.id}/print`} className="btn btn-ghost">Print record</Link><Link href={`/buildings/${item.buildingId}`} className="btn btn-ghost">Building</Link></div></div></Panel>
+      <Panel className="mb-4 p-5"><div className="flex flex-wrap items-start justify-between gap-5"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><AcmChip value={item.acmClassification} /><ConditionChip value={item.condition} /></div><h1 className="mt-3 font-display text-2xl font-semibold">{item.materialDescription}</h1><div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm text-ink-2"><MapPin size={15} className="text-teal" />{[item.building.name, item.floor, item.room, item.area, item.specificLocation].filter(Boolean).join(" · ") || "Location not specified"}</div><p className="mt-1 text-sm text-ink-3">{item.inventoryCode}{item.internalCode ? ` · ${item.internalCode}` : ""}{[item.materialCategory, item.homogeneousArea?.haCode].filter(Boolean).map((value) => ` · ${value}`).join("")}</p></div>{primary && <div className="w-32 shrink-0 overflow-hidden rounded-xl border border-[rgba(16,36,72,0.1)]"><PhotoThumb storageKey={primary.photo.storageKey} caption="" /></div>}<div className="flex gap-2"><Link href={`/inventory/${item.id}/print`} className="btn btn-ghost">Print record</Link><Link href={`/buildings/${item.buildingId}`} className="btn btn-ghost">Building</Link></div></div></Panel>
 
       {item.isProvisional && (
         <div className="mb-4 rounded-xl bg-[#fff4e0] px-4 py-2 text-sm text-[#9a5808]">
@@ -65,8 +76,8 @@ export default async function InventoryDetail({
 
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-[rgba(16,36,72,0.08)]">
         {SECTIONS.map((key) => (
-          <Link key={key} href={href(key)} className={`bldg-tab capitalize ${section === key ? "active" : ""}`}>
-            {key === "status" ? "Current status" : key === "repairs" ? "Repairs & removals" : key}
+          <Link key={key} href={href(key)} className={`bldg-tab whitespace-nowrap ${section === key ? "active" : ""}`}>
+            {(() => { const Icon = SECTION_META[key].icon; return <><Icon size={15} />{SECTION_META[key].label}</>; })()}
           </Link>
         ))}
       </div>
@@ -75,25 +86,21 @@ export default async function InventoryDetail({
         <div className="space-y-6">
           {section === "status" && <Panel className="p-5">
             <SectionTitle>Current status</SectionTitle>
-            <div className="flex flex-wrap gap-2">
-              <AcmChip value={item.acmClassification} />
-              <ConditionChip value={item.condition} />
-              {item.friable && <span className="chip chip-muted">{item.friable.replaceAll("_", " ")}</span>}
-              {item.labelPresent === false && <span className="chip chip-warn">Label missing</span>}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
-              <Meta label="Quantity remaining" value={formatQty(item.currentQuantity, item.quantityUnit)} />
-              <Meta label="Original quantity" value={formatQty(item.originalQuantity, item.quantityUnit)} />
-              <Meta label="Removed" value={formatQty(item.quantityRemoved, item.quantityUnit)} />
-              <Meta label="Fiber types" value={fibers.join(", ") || "—"} />
-              <Meta label="Percent asbestos" value={item.asbestosPercent != null ? `${item.asbestosPercent}%` : "—"} />
-              <Meta label="Method" value={item.analyticalMethod} />
-              <Meta label="Accessibility" value={item.accessibility?.replaceAll("_", " ")} />
-              <Meta label="Disturbance" value={item.disturbancePotential} />
-              <Meta label="Response" value={item.responseAction} />
-              <Meta label="Label" value={item.labelCondition} />
-              <Meta label="Homogeneous area" value={item.homogeneousArea?.haCode} />
-              <Meta label="Category I / II" value={item.categoryIorII} />
+            <div className="space-y-3 text-sm">
+              {[
+                ["ACM classification", <AcmChip key="classification" value={item.acmClassification} />],
+                ["Asbestos detected", item.asbestosDetected == null ? "—" : item.asbestosDetected ? "Yes" : "No"],
+                ["Fiber type", fibers.join(", ") || "—"],
+                ["Asbestos percentage", item.asbestosPercent != null ? `${item.asbestosPercent}%` : "—"],
+                ["Friable", item.friable?.replaceAll("_", " ")],
+                ["Category I / II", item.categoryIorII],
+                ["Analytical method", item.analyticalMethod],
+                ["Condition", <ConditionChip key="condition" value={item.condition} />],
+                ["Label", item.labelPresent == null ? "—" : item.labelPresent ? item.labelCondition || "Present" : "Missing"],
+                ["Recommended response", item.responseAction],
+                ["Accessibility", item.accessibility?.replaceAll("_", " ")],
+                ["Disturbance potential", item.disturbancePotential],
+              ].map(([label, value]) => <div key={String(label)} className="flex items-center justify-between gap-4"><span className="text-ink-3">{label}</span><span className="text-right font-medium capitalize">{value || "—"}</span></div>)}
             </div>
             {item.notes && <p className="mt-4 text-sm text-ink-2">{item.notes}</p>}
           </Panel>}
@@ -156,11 +163,7 @@ export default async function InventoryDetail({
         </div>
 
         <div className="space-y-6">
-          {section === "status" && primary && (
-            <Panel className="overflow-hidden">
-              <PhotoThumb storageKey={primary.photo.storageKey} caption="Primary inventory photograph" />
-            </Panel>
-          )}
+          {section === "status" && <Panel className="p-5"><SectionTitle>Quantity summary</SectionTitle><div className="grid grid-cols-2 gap-3"><Meta label="Original" value={<span className="font-display text-lg font-semibold">{formatQty(item.originalQuantity, item.quantityUnit)}</span>} /><Meta label="Current" value={<span className="font-display text-lg font-semibold">{formatQty(item.currentQuantity, item.quantityUnit)}</span>} /><Meta label="Repaired" value={<span className="font-display text-lg font-semibold">{formatQty(item.quantityRepaired, item.quantityUnit)}</span>} /><Meta label="Removed" value={<span className="font-display text-lg font-semibold">{formatQty(item.quantityRemoved, item.quantityUnit)}</span>} /></div><div className="mt-5 border-t border-[rgba(16,36,72,0.1)] pt-4"><div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3">Recent quantity history</div>{item.quantityHistory.slice(-3).reverse().map((h) => <div key={h.id} className="flex justify-between gap-3 py-1 text-xs"><span>{formatDate(h.changedAt)} · {h.reason}</span><span className="whitespace-nowrap">{formatQty(h.previousQty, h.unit)} → {formatQty(h.newQty, h.unit)}</span></div>)}{!item.quantityHistory.length && <p className="text-sm text-ink-3">No quantity changes recorded.</p>}</div></Panel>}
 
           {section === "status" && !user.isClient && (
             <Panel className="p-5">
@@ -171,7 +174,7 @@ export default async function InventoryDetail({
           {section === "status" && !user.isClient && (
             <Panel className="p-5">
               <SectionTitle>Edit all inventory details</SectionTitle>
-              <InventoryEditor buildingId={item.buildingId} item={item} />
+              <InventoryEditor buildingId={item.buildingId} item={itemWithArea} areas={item.building.areas} />
             </Panel>
           )}
 

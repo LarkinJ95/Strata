@@ -44,29 +44,37 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       <div className="mt-5 space-y-3">
         {client.facilities.map((f) => (
           <Panel key={f.id} className="p-3">
-            <SectionTitle action={!user.isClient ? <FacilityEditor clientId={client.id} facility={f} /> : undefined}>{f.name} · {f.facilityId}</SectionTitle>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {f.buildings.map((b) => (
-                (() => {
-                  const prefix = `${f.facilityId}-`;
-                  const shortNumber = b.buildingNumber.toUpperCase().startsWith(prefix.toUpperCase())
-                    ? b.buildingNumber.slice(prefix.length)
-                    : b.buildingNumber;
-                  return <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
-                    <div className="flex items-center justify-between">
-                      <div className="truncate text-sm font-medium">{shortNumber} Building</div>
-                      <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
-                    </div>
-                    {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
-                  </Link>;
-                })()
-              ))}
-            </div>
-            {!user.isClient && (
-              <div className="mt-3">
-                <BuildingEditor facilityId={f.id} />
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-1 py-1.5 hover:bg-paper-2">
+                <div>
+                  <div className="font-display text-[15px] font-semibold tracking-tight">{f.name} · {f.facilityId}</div>
+                  <div className="mt-0.5 text-xs text-ink-3">{f.buildings.length} {f.buildings.length === 1 ? "building" : "buildings"}</div>
+                </div>
+                <span className="btn btn-ghost pointer-events-none text-sm group-open:hidden">Expand</span>
+                <span className="btn btn-ghost pointer-events-none hidden text-sm group-open:inline-flex">Collapse</span>
+              </summary>
+              <div className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
+                {!user.isClient && <div className="mb-3"><FacilityEditor clientId={client.id} facility={f} /></div>}
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {f.buildings.map((b) => (
+                    (() => {
+                      const prefix = `${f.facilityId}-`;
+                      const shortNumber = b.buildingNumber.toUpperCase().startsWith(prefix.toUpperCase())
+                        ? b.buildingNumber.slice(prefix.length)
+                        : b.buildingNumber;
+                      return <Link key={b.id} href={`/buildings/${b.id}`} className="rounded-lg border border-[rgba(16,36,72,0.06)] px-2.5 py-2 hover:bg-paper-2">
+                        <div className="flex items-center justify-between">
+                          <div className="truncate text-sm font-medium">{shortNumber} Building</div>
+                          <Chip tone={b.complianceStatus === "current" ? "ok" : b.complianceStatus === "attention" ? "warn" : "danger"}>{b.complianceStatus}</Chip>
+                        </div>
+                        {(b.buildingUse || b.yearConstructed) && <div className="mt-0.5 truncate text-[11px] text-ink-3">{[b.buildingUse, b.yearConstructed].filter(Boolean).join(" · ")}</div>}
+                      </Link>;
+                    })()
+                  ))}
+                </div>
+                {!user.isClient && <div className="mt-3"><BuildingEditor facilityId={f.id} /></div>}
               </div>
-            )}
+            </details>
           </Panel>
         ))}
       </div>

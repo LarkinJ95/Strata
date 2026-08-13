@@ -15,8 +15,15 @@ import {
   savePpe,
   saveRepair,
   saveSample,
+  deleteBuilding,
+  deleteInventory,
+  deleteSample,
+  deleteClient,
+  deleteFacility,
   deletePpe,
 } from "@/actions/records";
+import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
+import { FunctionalAreaSelect } from "@/components/forms/functional-area-select";
 
 function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-3 md:grid-cols-2">{children}</div>;
@@ -96,6 +103,7 @@ export function ClientEditor({
           {message && <span role="status" className={message.endsWith(".") && !message.startsWith("Could") && message !== "Not allowed" ? "text-sm text-teal-dim" : "text-sm text-status-action"}>{message}</span>}
         </div>
       </form>
+      {client?.id && <form action={deleteClient} className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3"><AccessField /><input type="hidden" name="id" value={client.id} /><ConfirmDeleteButton label="Delete client" message="Delete this client? This is only allowed after its facilities are removed." /></form>}
     </Disclose>
   );
 }
@@ -122,6 +130,7 @@ export function FacilityEditor({ clientId, facility }: { clientId: string; facil
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={facility?.notes ?? ""} /></Field>
         <button className="btn btn-primary">{facility ? "Save facility" : "Create facility"}</button>
       </form>
+      {facility && <form action={deleteFacility} className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3"><AccessField /><input type="hidden" name="id" value={facility.id} /><ConfirmDeleteButton label="Delete facility" message="Delete this facility? Remove or move its buildings first." /></form>}
     </Disclose>
   );
 }
@@ -187,6 +196,13 @@ export function BuildingEditor({
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={building?.notes ?? ""} /></Field>
         <button className="btn btn-primary">{building?.id ? "Save building" : "Create building"}</button>
       </form>
+      {building?.id && (
+        <form action={deleteBuilding} className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
+          <AccessField />
+          <input type="hidden" name="id" value={building.id} />
+          <ConfirmDeleteButton label="Delete building" message="Delete this building and all of its inventory, samples, inspections, photos, documents, and floor plans? This cannot be undone." />
+        </form>
+      )}
     </Disclose>
   );
 }
@@ -194,8 +210,10 @@ export function BuildingEditor({
 export function InventoryEditor({
   buildingId,
   item,
+  areas = [],
 }: {
   buildingId: string;
+  areas?: { id: string; name: string; faCode: string | null; floor?: { name: string } | null }[];
   item?: {
     id: string;
     inventoryCode: string;
@@ -205,6 +223,7 @@ export function InventoryEditor({
     floor: string | null;
     room: string | null;
     area: string | null;
+    functionalAreaId?: string | null;
     specificLocation: string | null;
     acmClassification: string;
     condition: string;
@@ -261,7 +280,7 @@ export function InventoryEditor({
           </Field>
           <Field label="Floor"><input name="floor" defaultValue={item?.floor ?? ""} /></Field>
           <Field label="Room"><input name="room" defaultValue={item?.room ?? ""} /></Field>
-          <Field label="Functional area"><input name="area" defaultValue={item?.area ?? ""} /></Field>
+          <Field label="Functional area"><FunctionalAreaSelect areas={areas} initialId={item?.functionalAreaId} initialLabel={item?.area} /></Field>
           <Field label="Specific location"><input name="specificLocation" defaultValue={item?.specificLocation ?? ""} /></Field>
           <Field label="Classification">
             <select name="acmClassification" defaultValue={item?.acmClassification ?? "unknown"}>
@@ -319,6 +338,13 @@ export function InventoryEditor({
           {message && <span role="status" className={message.endsWith(".") && !message.startsWith("Could") && message !== "Not allowed" ? "text-sm text-teal-dim" : "text-sm text-status-action"}>{message}</span>}
         </div>
       </form>
+      {item && (
+        <form action={deleteInventory} className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
+          <AccessField />
+          <input type="hidden" name="id" value={item.id} />
+          <ConfirmDeleteButton label="Delete inventory item" message="Delete this inventory item and its linked repair, removal, inspection, and document records? This cannot be undone." />
+        </form>
+      )}
     </Disclose>
   );
 }
@@ -332,6 +358,7 @@ export function SampleEditor({
   sample?: { id: string; sampleNumber: string; material: string; floor: string | null; room: string | null; location: string | null; laboratoryId: string | null; status: string; notes: string | null };
   laboratories: { id: string; name: string }[];
 }) {
+  const [layerCount, setLayerCount] = useState(1);
   return (
     <Disclose label={sample ? `Edit sample ${sample.material}` : "Add sample"}>
       <form action={saveSample} className="space-y-3">
@@ -360,29 +387,50 @@ export function SampleEditor({
         </Grid>
         {!sample && (
           <div className="rounded-xl border border-[rgba(16,104,108,0.18)] bg-[rgba(16,104,108,0.035)] p-3">
-            <div className="mb-3 text-sm font-semibold text-teal-dim">Laboratory result (optional at collection)</div>
-            <Grid>
-              <Field label="Asbestos result">
-                <select name="resultDetected" defaultValue="">
-                  <option value="">Not entered yet</option>
-                  <option value="yes">Asbestos detected</option>
-                  <option value="no">Not detected</option>
-                </select>
-              </Field>
-              <Field label="Percent / reporting limit"><input name="reportedPercent" inputMode="decimal" placeholder="1, 0.5, or <1%" /></Field>
-              <Field label="Method">
-                <select name="analysisMethod" defaultValue="PLM">
-                  {['PLM', 'PLM Point Count', 'TEM', 'Gravimetric Reduction', 'Chatfield'].map((method) => <option key={method}>{method}</option>)}
-                </select>
-              </Field>
-              <Field label="Lab comments"><input name="resultComments" placeholder="Optional" /></Field>
-            </Grid>
-            <div className="mt-3 field"><label>Asbestos type(s)</label><div className="flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-[rgba(16,36,72,0.12)] bg-white p-2 text-sm">{['Chrysotile', 'Amosite', 'Crocidolite', 'Tremolite', 'Actinolite', 'Anthophyllite'].map((fiber) => <label key={fiber} className="flex items-center gap-1.5"><input name="fiberTypes" type="checkbox" value={fiber} />{fiber}</label>)}</div></div>
+            <input type="hidden" name="layerCount" value={layerCount} />
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-teal-dim">Sample layers and laboratory results</div>
+                <p className="mt-1 text-xs text-ink-3">Add each material layer now, with its result if available. Results can also be entered later.</p>
+              </div>
+              <button type="button" className="btn btn-ghost text-sm" onClick={() => setLayerCount((count) => count + 1)}>Add layer</button>
+            </div>
+            {Array.from({ length: layerCount }, (_, index) => {
+              const layer = index + 1;
+              return <div key={layer} className="mb-4 rounded-lg border border-[rgba(16,36,72,0.12)] bg-white p-3 last:mb-0">
+                <div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">Layer {layer}</span>{layerCount > 1 && <button type="button" className="text-xs font-medium text-status-action" onClick={() => setLayerCount((count) => count - 1)}>Remove</button>}</div>
+                <Grid>
+                  <Field label="Layer material / description"><input name={`layer_${layer}_description`} defaultValue={layer === 1 ? "" : `Layer ${layer}`} placeholder={layer === 1 ? "Same as sample material" : `Layer ${layer}`} /></Field>
+                  <Field label="Asbestos result">
+                    <select name={`layer_${layer}_detected`} defaultValue="">
+                      <option value="">Not entered yet</option>
+                      <option value="yes">Asbestos detected</option>
+                      <option value="no">Not detected</option>
+                    </select>
+                  </Field>
+                  <Field label="Percent / reporting limit"><input name={`layer_${layer}_percent`} inputMode="decimal" placeholder="1, 0.5, or <1%" /></Field>
+                  <Field label="Method">
+                    <select name={`layer_${layer}_method`} defaultValue="PLM">
+                      {['PLM', 'PLM Point Count', 'TEM', 'Gravimetric Reduction', 'Chatfield'].map((method) => <option key={method}>{method}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Lab comments"><input name={`layer_${layer}_comments`} placeholder="Optional" /></Field>
+                </Grid>
+                <div className="mt-3 field"><label>Asbestos type(s)</label><div className="flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-[rgba(16,36,72,0.12)] bg-paper-2 p-2 text-sm">{['Chrysotile', 'Amosite', 'Crocidolite', 'Tremolite', 'Actinolite', 'Anthophyllite'].map((fiber) => <label key={fiber} className="flex items-center gap-1.5"><input name={`layer_${layer}_fibers`} type="checkbox" value={fiber} />{fiber}</label>)}</div></div>
+              </div>;
+            })}
           </div>
         )}
         <Field label="Notes"><textarea name="notes" rows={2} defaultValue={sample?.notes ?? ""} /></Field>
         <button className="btn btn-primary">{sample ? "Save sample" : "Add sample"}</button>
       </form>
+      {sample && (
+        <form action={deleteSample} className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
+          <AccessField />
+          <input type="hidden" name="id" value={sample.id} />
+          <ConfirmDeleteButton label="Delete sample" message="Delete this sample, its laboratory results, links, and attached documents? This cannot be undone." />
+        </form>
+      )}
     </Disclose>
   );
 }
@@ -671,7 +719,7 @@ export function PpeEditor({
         <form action={deletePpe} className="mt-2">
           <AccessField />
           <input type="hidden" name="id" value={item.id} />
-          <button className="btn btn-danger text-xs">Remove</button>
+          <ConfirmDeleteButton label="Remove" message="Remove this PPE requirement?" />
         </form>
       )}
     </Disclose>

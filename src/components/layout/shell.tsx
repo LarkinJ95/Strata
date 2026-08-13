@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Settings, Users } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, LayoutDashboard, LogOut, Settings, Users, ListChecks } from "lucide-react";
 import { useTransition } from "react";
 import type { SessionUser } from "@/lib/types";
 import { clearSession } from "@/lib/session-client";
@@ -12,6 +12,7 @@ import { GlobalSearch } from "@/components/layout/global-search";
 const STAFF_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/queue", label: "Compliance Queue", icon: AlertTriangle },
+  { href: "/quality", label: "Data Quality", icon: ListChecks },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/inspections", label: "Inspector Workspace", icon: ClipboardCheck },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -57,13 +58,8 @@ export function AppShell({
           fieldMode && "!hidden"
         )}
       >
-        <Link href={user.isClient ? "/portal" : "/dashboard"} className="mb-7 flex items-center gap-2.5 px-2">
-          <img src="/favicon.png" alt="Strata" className="h-9 w-9 rounded-[10px] shadow-glow" />
-          <div className="text-[13px] font-medium leading-tight text-ink-2">
-            Building Compliance
-            <br />
-            Platform
-          </div>
+        <Link href={user.isClient ? "/portal" : "/dashboard"} className="mb-7 block px-2">
+          <img src="/strata-logo.png" alt="STRATA" className="h-auto w-[154px]" />
         </Link>
 
         <nav className="flex-1 space-y-0.5">

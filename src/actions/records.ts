@@ -4,12 +4,20 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { sessionFromToken } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { persistBuildingCompliance } from "@/lib/compliance";
 import { activity, audit } from "@/lib/audit";
+import { deleteStoredObject } from "@/lib/storage";
 
 async function actor(form: FormData) {
   const user = await sessionFromToken(String(form.get("access") || ""));
   if (!user || user.isClient) throw new Error("Not allowed");
+  return user;
+}
+
+async function deletionActor(form: FormData) {
+  const user = await actor(form);
+  if (!["org_admin", "environmental_manager"].includes(user.roleSlug)) throw new Error("Only organization administrators and environmental managers can permanently delete records");
   return user;
 }
 
@@ -166,6 +174,7 @@ export async function saveInventory(form: FormData) {
     notes: str(form, "notes") || null,
     recordStatus: str(form, "recordStatus") || "active",
   };
+  const functionalAreaId = str(form, "functionalAreaId") || null;
   if (!patch.materialDescription || (id && !patch.inventoryCode)) throw new Error("Item number and material description are required");
 
   if (id) {
@@ -173,6 +182,8 @@ export async function saveInventory(form: FormData) {
     if (!inv) throw new Error("Inventory not found");
     const building = await db.building.findUnique({ where: { id: inv.buildingId }, select: { buildingNumber: true } });
     if (!building) throw new Error("Building not found");
+    const functionalArea = functionalAreaId ? await db.buildingArea.findFirst({ where: { id: functionalAreaId, buildingId: inv.buildingId } }) : null;
+    if (functionalAreaId && !functionalArea) throw new Error("Select a functional area from this building");
     const internalCode = patch.internalCode || `${building.buildingNumber}-${patch.inventoryCode}`;
     if (qty != null && qty !== inv.currentQuantity) {
       await db.inventoryQuantityHistory.create({
@@ -197,7 +208,8 @@ export async function saveInventory(form: FormData) {
         },
       });
     }
-    await db.inventoryItem.update({ where: { id }, data: { ...patch, internalCode } });
+    await db.inventoryItem.update({ where: { id }, data: { ...patch, area: functionalArea?.faCode || functionalArea?.name || patch.area, internalCode } });
+    await db.$executeRawUnsafe('UPDATE "InventoryItem" SET "functionalAreaId" = ? WHERE "id" = ?', functionalAreaId, id);
     await persistBuildingCompliance(inv.buildingId);
     await audit({ user, action: "inventory.update", recordType: "inventory", recordId: id, previousValue: inv, newValue: patch });
     revalidatePath(`/buildings/${inv.buildingId}`);
@@ -207,6 +219,8 @@ export async function saveInventory(form: FormData) {
 
   const building = await db.building.findFirst({ where: { id: buildingId, organizationId: user.organizationId } });
   if (!building) throw new Error("Building not found");
+  const functionalArea = functionalAreaId ? await db.buildingArea.findFirst({ where: { id: functionalAreaId, buildingId } }) : null;
+  if (functionalAreaId && !functionalArea) throw new Error("Select a functional area from this building");
   const last = await db.inventoryItem.findFirst({ where: { buildingId }, orderBy: { inventoryCode: "desc" } });
   const n = last ? Number(String(last.inventoryCode).split("-").pop() || 0) + 1 : 1;
   const itemNumber = patch.inventoryCode || String(n).padStart(3, "0");
@@ -218,10 +232,12 @@ export async function saveInventory(form: FormData) {
       clientId: building.clientId,
       facilityId: building.facilityId,
       buildingId,
+      area: functionalArea?.faCode || functionalArea?.name || patch.area,
       inventoryCode: itemNumber,
       internalCode,
     },
   });
+  await db.$executeRawUnsafe('UPDATE "InventoryItem" SET "functionalAreaId" = ? WHERE "id" = ?', functionalAreaId, created.id);
   if (qty != null) {
     await db.inventoryQuantityHistory.create({
       data: {
@@ -273,14 +289,23 @@ export async function saveSample(form: FormData) {
     const laboratory = await db.laboratory.findFirst({ where: { id: laboratoryId, organizationId: user.organizationId } });
     if (!laboratory) throw new Error("Select a laboratory from Settings");
   }
-  const resultDetected = str(form, "resultDetected");
-  const reportedPercent = str(form, "reportedPercent");
-  const asbestosPercent = reportedPercent && !reportedPercent.startsWith("<") ? Number(reportedPercent) : null;
-  const detectionLimit = reportedPercent.startsWith("<") ? reportedPercent : null;
-  const fiberTypes = form.getAll("fiberTypes").map(String).filter(Boolean);
-  const analysisMethod = str(form, "analysisMethod") || "PLM";
-  const resultComments = str(form, "resultComments") || null;
-  if (asbestosPercent != null && !Number.isFinite(asbestosPercent)) throw new Error("Asbestos percent must be a number or a reporting limit such as <1%");
+  const layerCount = Math.max(1, Math.min(20, Number(str(form, "layerCount")) || 1));
+  const layers = Array.from({ length: layerCount }, (_, index) => {
+    const layerNumber = index + 1;
+    const reportedPercent = str(form, `layer_${layerNumber}_percent`);
+    const asbestosPercent = reportedPercent && !reportedPercent.startsWith("<") ? Number(reportedPercent) : null;
+    if (asbestosPercent != null && !Number.isFinite(asbestosPercent)) throw new Error(`Layer ${layerNumber}: asbestos percent must be a number or a reporting limit such as <1%`);
+    return {
+      layerNumber,
+      description: str(form, `layer_${layerNumber}_description`),
+      resultDetected: str(form, `layer_${layerNumber}_detected`),
+      asbestosPercent,
+      detectionLimit: reportedPercent.startsWith("<") ? reportedPercent : null,
+      fiberTypes: form.getAll(`layer_${layerNumber}_fibers`).map(String).filter(Boolean),
+      analysisMethod: str(form, `layer_${layerNumber}_method`) || "PLM",
+      resultComments: str(form, `layer_${layerNumber}_comments`) || null,
+    };
+  });
   if (!data.sampleNumber || !data.material) throw new Error("Sample number and material are required");
   if (id) {
     const sample = await db.sample.findFirst({ where: { id, organizationId: user.organizationId } });
@@ -307,35 +332,37 @@ export async function saveSample(form: FormData) {
       collectionDate: new Date(),
       inspectorId: user.id,
       laboratoryId,
-      analysisMethod: resultDetected ? analysisMethod : null,
-      status: resultDetected ? "results_received" : data.status,
+      analysisMethod: layers.some((layer) => layer.resultDetected) ? layers.find((layer) => layer.resultDetected)?.analysisMethod ?? null : null,
+      status: layers.some((layer) => layer.resultDetected) ? "results_received" : data.status,
     },
   });
-  const layer = await db.sampleLayer.create({
-    data: {
-      sampleId: created.id,
-      layerNumber: 1,
-      description: data.material || "Layer 1",
-      asbestosDetected: resultDetected ? resultDetected === "yes" : null,
-      asbestosPercent,
-      fiberTypes: JSON.stringify(fiberTypes),
-      classification: resultDetected ? (resultDetected === "yes" ? "confirmed_acm" : "non_acm") : null,
-      detectionLimit,
-      comments: resultComments,
-    },
-  });
-  if (resultDetected) {
-    await db.sampleResult.create({
+  for (const input of layers) {
+    const layer = await db.sampleLayer.create({
       data: {
-        sampleLayerId: layer.id,
-        asbestosDetected: resultDetected === "yes",
-        asbestosPercent,
-        fiberTypes: JSON.stringify(fiberTypes),
-        method: analysisMethod,
-        detectionLimit,
-        labComments: resultComments,
+        sampleId: created.id,
+        layerNumber: input.layerNumber,
+        description: input.description || (input.layerNumber === 1 ? data.material : `Layer ${input.layerNumber}`),
+        asbestosDetected: input.resultDetected ? input.resultDetected === "yes" : null,
+        asbestosPercent: input.asbestosPercent,
+        fiberTypes: JSON.stringify(input.fiberTypes),
+        classification: input.resultDetected ? (input.resultDetected === "yes" ? "confirmed_acm" : "non_acm") : null,
+        detectionLimit: input.detectionLimit,
+        comments: input.resultComments,
       },
     });
+    if (input.resultDetected) {
+      await db.sampleResult.create({
+        data: {
+          sampleLayerId: layer.id,
+          asbestosDetected: input.resultDetected === "yes",
+          asbestosPercent: input.asbestosPercent,
+          fiberTypes: JSON.stringify(input.fiberTypes),
+          method: input.analysisMethod,
+          detectionLimit: input.detectionLimit,
+          labComments: input.resultComments,
+        },
+      });
+    }
   }
   revalidatePath(`/buildings/${buildingId}`);
 }
@@ -505,7 +532,7 @@ export async function savePpe(form: FormData) {
 }
 
 export async function deletePpe(form: FormData) {
-  const user = await actor(form);
+  const user = await deletionActor(form);
   const id = str(form, "id");
   const row = await db.buildingPpe.findUnique({ where: { id } });
   if (!row) return;
@@ -513,4 +540,175 @@ export async function deletePpe(form: FormData) {
   if (!building) throw new Error("Not allowed");
   await db.buildingPpe.delete({ where: { id } });
   revalidatePath(`/buildings/${row.buildingId}`);
+}
+
+async function deleteFiles(rows: { storageKey: string }[]) {
+  await Promise.all(rows.map((row) => deleteStoredObject(row.storageKey).catch(() => undefined)));
+}
+
+export async function deleteBuilding(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const building = await db.building.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!building) throw new Error("Building not found");
+
+  const [photos, documents, plans] = await Promise.all([
+    db.photo.findMany({ where: { organizationId: user.organizationId, buildingId: id }, select: { storageKey: true } }),
+    db.document.findMany({ where: { organizationId: user.organizationId, buildingId: id }, select: { storageKey: true } }),
+    db.floorPlan.findMany({ where: { organizationId: user.organizationId, buildingId: id }, select: { storageKey: true } }),
+  ]);
+  await db.$transaction([
+    db.photo.deleteMany({ where: { organizationId: user.organizationId, buildingId: id } }),
+    db.document.deleteMany({ where: { organizationId: user.organizationId, buildingId: id } }),
+    db.floorPlan.deleteMany({ where: { organizationId: user.organizationId, buildingId: id } }),
+    db.contractorAcknowledgement.deleteMany({ where: { organizationId: user.organizationId, buildingId: id } }),
+    db.building.delete({ where: { id } }),
+  ]);
+  await deleteFiles([...photos, ...documents, ...plans]);
+  await audit({ user, action: "building.delete", recordType: "building", recordId: id, previousValue: building });
+  revalidatePath(`/clients/${building.clientId}`);
+  redirect(`/clients/${building.clientId}`);
+}
+
+export async function deleteInventory(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const item = await db.inventoryItem.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!item) throw new Error("Inventory item not found");
+  const documents = await db.document.findMany({ where: { organizationId: user.organizationId, inventoryItemId: id }, select: { id: true, storageKey: true } });
+  await db.$transaction([
+    db.document.deleteMany({ where: { id: { in: documents.map((row) => row.id) } } }),
+    db.photoLink.deleteMany({ where: { inventoryItemId: id } }),
+    db.inspectionItem.deleteMany({ where: { inventoryItemId: id } }),
+    db.repair.deleteMany({ where: { inventoryItemId: id } }),
+    db.removalEvent.deleteMany({ where: { inventoryItemId: id } }),
+    db.inventoryItem.delete({ where: { id } }),
+  ]);
+  await deleteFiles(documents);
+  await persistBuildingCompliance(item.buildingId);
+  await audit({ user, action: "inventory.delete", recordType: "inventory", recordId: id, previousValue: item });
+  revalidatePath(`/buildings/${item.buildingId}`);
+  redirect(`/buildings/${item.buildingId}?tab=inventory`);
+}
+
+export async function deleteSample(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const sample = await db.sample.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!sample) throw new Error("Sample not found");
+  const documents = await db.document.findMany({ where: { organizationId: user.organizationId, sampleId: id }, select: { id: true, storageKey: true } });
+  await db.$transaction([
+    db.document.deleteMany({ where: { id: { in: documents.map((row) => row.id) } } }),
+    db.photoLink.deleteMany({ where: { sampleId: id } }),
+    db.sample.delete({ where: { id } }),
+  ]);
+  await deleteFiles(documents);
+  await persistBuildingCompliance(sample.buildingId);
+  await audit({ user, action: "sample.delete", recordType: "sample", recordId: id, previousValue: sample });
+  revalidatePath(`/buildings/${sample.buildingId}`);
+  revalidatePath("/samples");
+  redirect(`/buildings/${sample.buildingId}?tab=samples`);
+}
+
+export async function deletePhoto(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const photo = await db.photo.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!photo) throw new Error("Photograph not found");
+  await db.photo.delete({ where: { id } });
+  await deleteStoredObject(photo.storageKey).catch(() => undefined);
+  await audit({ user, action: "photo.delete", recordType: "photo", recordId: id, previousValue: photo });
+  if (photo.buildingId) revalidatePath(`/buildings/${photo.buildingId}`);
+}
+
+export async function deleteDocument(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const document = await db.document.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!document) throw new Error("Document not found");
+  await db.document.delete({ where: { id } });
+  await deleteStoredObject(document.storageKey).catch(() => undefined);
+  await audit({ user, action: "document.delete", recordType: "document", recordId: id, previousValue: document });
+  if (document.buildingId) revalidatePath(`/buildings/${document.buildingId}`);
+}
+
+export async function deleteFloorPlan(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const plan = await db.floorPlan.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!plan) throw new Error("Floor plan not found");
+  await db.floorPlan.delete({ where: { id } });
+  await deleteStoredObject(plan.storageKey).catch(() => undefined);
+  await audit({ user, action: "floor_plan.delete", recordType: "floor_plan", recordId: id, previousValue: plan });
+  revalidatePath(`/buildings/${plan.buildingId}`);
+  revalidatePath(`/buildings/${plan.buildingId}/plans`);
+}
+
+export async function deleteFacility(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const facility = await db.facility.findFirst({ where: { id, organizationId: user.organizationId }, include: { _count: { select: { buildings: true } } } });
+  if (!facility) throw new Error("Facility not found");
+  if (facility._count.buildings) throw new Error("Delete or move the facility's buildings before deleting the facility");
+  await db.facility.delete({ where: { id } });
+  await audit({ user, action: "facility.delete", recordType: "facility", recordId: id, previousValue: facility });
+  revalidatePath(`/clients/${facility.clientId}`);
+}
+
+export async function deleteClient(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const client = await db.client.findFirst({ where: { id, organizationId: user.organizationId }, include: { _count: { select: { facilities: true } } } });
+  if (!client) throw new Error("Client not found");
+  if (client._count.facilities) throw new Error("Delete or move the client's facilities before deleting the client");
+  await db.client.delete({ where: { id } });
+  await audit({ user, action: "client.delete", recordType: "client", recordId: id, previousValue: client });
+  revalidatePath("/clients");
+  redirect("/clients");
+}
+
+export async function deleteFloor(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const floor = await db.buildingFloor.findFirst({ where: { id, building: { organizationId: user.organizationId } } });
+  if (!floor) throw new Error("Floor not found");
+  await db.buildingFloor.delete({ where: { id } });
+  await audit({ user, action: "floor.delete", recordType: "floor", recordId: id, previousValue: floor });
+  revalidatePath(`/buildings/${floor.buildingId}`);
+}
+
+export async function deleteFunctionalArea(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const area = await db.buildingArea.findFirst({ where: { id, building: { organizationId: user.organizationId } } });
+  if (!area) throw new Error("Functional area not found");
+  await db.buildingArea.delete({ where: { id } });
+  await audit({ user, action: "functional_area.delete", recordType: "functional_area", recordId: id, previousValue: area });
+  revalidatePath(`/buildings/${area.buildingId}`);
+}
+
+export async function deletePaintSample(form: FormData) {
+  const user = await deletionActor(form);
+  const id = str(form, "id");
+  const sample = await db.paintSample.findFirst({ where: { id, organizationId: user.organizationId } });
+  if (!sample) throw new Error("Paint sample not found");
+  await db.paintSample.delete({ where: { id } });
+  await audit({ user, action: "paint_sample.delete", recordType: "paint_sample", recordId: id, previousValue: sample });
+  revalidatePath(`/buildings/${sample.buildingId}`);
+}
+
+export async function bulkAssignFunctionalArea(form: FormData) {
+  const user = await actor(form);
+  if (!can(user, "inventory.edit")) throw new Error("Not allowed to edit inventory");
+  const ids = form.getAll("inventoryId").map(String).filter(Boolean);
+  const functionalAreaId = str(form, "functionalAreaId");
+  if (!ids.length || !functionalAreaId) throw new Error("Choose one functional area and at least one inventory item");
+  const area = await db.buildingArea.findFirst({ where: { id: functionalAreaId, building: { organizationId: user.organizationId } } });
+  if (!area) throw new Error("Functional area not found");
+  const items = await db.inventoryItem.findMany({ where: { id: { in: ids }, organizationId: user.organizationId, buildingId: area.buildingId }, select: { id: true } });
+  if (items.length !== ids.length) throw new Error("Every selected item must belong to the functional area's building");
+  await Promise.all(items.map((item) => db.$executeRawUnsafe('UPDATE "InventoryItem" SET "functionalAreaId" = ?, "area" = ? WHERE "id" = ?', area.id, area.faCode || area.name, item.id)));
+  await audit({ user, action: "inventory.functional_area.bulk_assign", recordType: "inventory", recordId: area.id, newValue: { functionalAreaId: area.id, inventoryIds: ids } });
+  revalidatePath(`/buildings/${area.buildingId}`);
+  revalidatePath("/quality");
 }

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { uploadPhoto } from "@/actions/mutations";
+import { DropFileInput } from "@/components/forms/drop-file-input";
 
 export function PhotoUpload({
   buildingId,
@@ -33,9 +34,8 @@ export function PhotoUpload({
         });
       }}
     >
-      <div className="field">
-        <label>Add photo</label>
-        <input name="file" type="file" accept="image/*" capture="environment" required />
+      <div className="min-w-[260px] flex-1">
+        <DropFileInput name="file" accept="image/*" capture="environment" label="Drop a photograph here or click to browse" />
       </div>
       <div className="field">
         <label>Category</label>

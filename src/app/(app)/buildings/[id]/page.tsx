@@ -24,6 +24,9 @@ import { formatDate, formatNumber, parseJson, photoPolicyMessage } from "@/lib/u
 import { StartInspectionButton } from "@/components/forms/actions-ui";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { DocumentUpload } from "@/components/forms/document-upload";
+import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
+import { AccessField } from "@/components/forms/access-field";
+import { deleteDocument, deletePhoto, deleteFloor, deleteFunctionalArea, deletePaintSample } from "@/actions/records";
 import {
   BuildingEditor,
   FloorEditor,
@@ -66,26 +69,34 @@ export default async function BuildingPage({
   const user = await getSession();
   if (!user) redirect("/login");
 
-  const building = await db.building.findFirst({
+  // D1 limits the number of SQL variables in one query. Loading all nested
+  // collections together fails once a building has more than 100 records.
+  const buildingRecord = await db.building.findFirst({
     where: { id, organizationId: user.organizationId },
     include: {
       client: true,
       facility: true,
-      floors: { orderBy: { level: "asc" }, include: { areas: true } },
-      areas: { orderBy: { name: "asc" } },
-      paintSamples: { orderBy: { sampleNumber: "asc" } },
-      ppeRequirements: { orderBy: { item: "asc" } },
-      inventoryItems: { include: { photoLinks: { where: { primaryPhoto: true }, include: { photo: true } } }, orderBy: { inventoryCode: "asc" } },
-      repairs: { include: { inventoryItem: true }, orderBy: { identifiedAt: "desc" } },
-      samples: { include: { layers: { include: { result: true } } }, orderBy: { collectionDate: "desc" } },
-      inspections: { include: { inspector: true }, orderBy: { scheduledDate: "desc" } },
-      activities: { include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 },
-      documents: { orderBy: { uploadedAt: "desc" } },
-      photos: { orderBy: { uploadedAt: "desc" } },
-      floorPlans: true,
     },
   });
-  if (!building || !assertBuildingAccess(user, building)) notFound();
+  if (!buildingRecord || !assertBuildingAccess(user, buildingRecord)) notFound();
+  const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, samples, inspections, activities, documents, photos, floorPlans] = await Promise.all([
+    db.buildingFloor.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { level: "asc" }, include: { areas: true } }),
+    db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floorRec: { select: { name: true } } } }),
+    db.paintSample.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { sampleNumber: "asc" } }),
+    db.buildingPpe.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { item: "asc" } }),
+    db.inventoryItem.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { inventoryCode: "asc" } }),
+    db.repair.findMany({ where: { buildingId: buildingRecord.id }, include: { inventoryItem: true }, orderBy: { identifiedAt: "desc" } }),
+    db.sample.findMany({ where: { buildingId: buildingRecord.id }, include: { layers: { include: { result: true } } }, orderBy: { collectionDate: "desc" } }),
+    db.inspection.findMany({ where: { buildingId: buildingRecord.id }, include: { inspector: true }, orderBy: { scheduledDate: "desc" } }),
+    db.activityEvent.findMany({ where: { buildingId: buildingRecord.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 }),
+    db.document.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
+    db.photo.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
+    db.floorPlan.findMany({ where: { buildingId: buildingRecord.id } }),
+  ]);
+  const inventoryAreaRows = await db.$queryRawUnsafe<Array<{ id: string; functionalAreaId: string | null }>>('SELECT "id", "functionalAreaId" FROM "InventoryItem" WHERE "buildingId" = ?', buildingRecord.id);
+  const inventoryAreaById = new Map(inventoryAreaRows.map((row) => [row.id, row.functionalAreaId]));
+  const inventoryWithAreas = inventoryItems.map((item) => ({ ...item, functionalAreaId: inventoryAreaById.get(item.id) ?? null }));
+  const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems: inventoryWithAreas, repairs, samples, inspections, activities, documents, photos, floorPlans };
 
   const laboratories = user.isClient ? [] : await db.laboratory.findMany({
     where: { organizationId: user.organizationId },
@@ -266,7 +277,7 @@ export default async function BuildingPage({
 
         {tab === "inventory" && (
           <div className="space-y-3">
-            {!user.isClient && <InventoryEditor buildingId={building.id} />}
+            {!user.isClient && <InventoryEditor buildingId={building.id} areas={building.areas} />}
             {items.length ? (
               <Panel className="overflow-hidden p-0">
                 <div className="overflow-x-auto">
@@ -345,6 +356,7 @@ export default async function BuildingPage({
                   {s.resultSummary}
                 </div>
                 {!user.isClient && <div className="mt-2"><PaintSampleEditor buildingId={building.id} floors={building.floors} areas={building.areas} sample={s} laboratories={laboratories} /></div>}
+                {!user.isClient && <form action={deletePaintSample} className="mt-2"><AccessField /><input type="hidden" name="id" value={s.id} /><ConfirmDeleteButton label="Delete paint sample" message="Delete this paint sample permanently?" /></form>}
               </Panel>
             ))}
             {!building.paintSamples.length && <p className="text-sm text-ink-3">No paint samples recorded for this building.</p>}
@@ -360,8 +372,11 @@ export default async function BuildingPage({
                 <Panel key={f.id} className="p-4">
                   <div className="font-medium">{f.name} <span className="text-xs text-ink-3">level {f.level}</span></div>
                   <div className="text-xs text-ink-3">{f.occupancy || "—"} · {f.squareFootage ? `${f.squareFootage.toLocaleString()} SF` : "SF not set"}</div>
-                  <div className="mt-2 text-xs text-ink-2">{f.areas.length} functional area{f.areas.length === 1 ? "" : "s"}</div>
+                  <div className="mt-2 text-xs text-ink-2">
+                    {f.areas.length ? <>Functional areas: {f.areas.map((area) => area.faCode ? `${area.faCode} · ${area.name}` : area.name).join(", ")}</> : "No functional areas assigned"}
+                  </div>
                   {!user.isClient && <div className="mt-2"><FloorEditor buildingId={building.id} floor={f} /></div>}
+                  {!user.isClient && <form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={f.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form>}
                 </Panel>
               ))}
             </div>
@@ -373,7 +388,17 @@ export default async function BuildingPage({
                   <div className="font-medium">{a.faCode ? `${a.faCode} · ` : ""}{a.name}</div>
                   <div className="text-xs text-ink-3">{a.areaType?.replaceAll("_", " ")} · {building.floors.find((f) => f.id === a.floorId)?.name || "No floor"}</div>
                   {a.useDescription && <div className="mt-1 text-sm text-ink-2">{a.useDescription}</div>}
+                  <div className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3">Inventory in this FA</div>
+                    {items.filter((item) => item.functionalAreaId === a.id).map((item) => (
+                      <Link key={item.id} href={`/inventory/${item.id}`} className="block rounded-lg px-2 py-1 text-sm hover:bg-paper-2">
+                        <span className="mono-id text-teal-dim">{item.inventoryCode}</span> · {item.materialDescription}
+                      </Link>
+                    ))}
+                    {!items.some((item) => item.functionalAreaId === a.id) && <div className="text-xs text-ink-3">No inventory assigned to this functional area.</div>}
+                  </div>
                   {!user.isClient && <div className="mt-2"><FunctionalAreaEditor buildingId={building.id} floors={building.floors} area={a} /></div>}
+                  {!user.isClient && <form action={deleteFunctionalArea} className="mt-2"><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form>}
                 </Panel>
               ))}
             </div>
@@ -447,7 +472,16 @@ export default async function BuildingPage({
             )}
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {building.photos.map((p) => (
-                <PhotoThumb key={p.id} storageKey={p.storageKey} caption={p.originalFilename} />
+                <div key={p.id} className="space-y-2">
+                  <PhotoThumb storageKey={p.storageKey} caption={p.originalFilename} />
+                  {!user.isClient && (
+                    <form action={deletePhoto}>
+                      <AccessField />
+                      <input type="hidden" name="id" value={p.id} />
+                      <ConfirmDeleteButton label="Delete photo" message="Delete this photograph permanently?" />
+                    </form>
+                  )}
+                </div>
               ))}
               {!building.photos.length && <p className="text-ink-3">No photographs on file.</p>}
             </div>
@@ -464,10 +498,19 @@ export default async function BuildingPage({
             )}
             <Panel className="p-5">
               {building.documents.map((d) => (
-                <a key={d.id} href={fileUrl(d.storageKey)} className="mb-3 block rounded-xl px-2 py-2 hover:bg-paper-2">
-                  <div className="font-medium">{d.name}</div>
-                  <div className="text-xs text-ink-3">{d.docType.replaceAll("_", " ")} · rev {d.revision} · {formatDate(d.documentDate)}</div>
-                </a>
+                <div key={d.id} className="mb-3 flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-paper-2">
+                  <a href={fileUrl(d.storageKey)} className="min-w-0 flex-1">
+                    <div className="font-medium">{d.name}</div>
+                    <div className="text-xs text-ink-3">{d.docType.replaceAll("_", " ")} · rev {d.revision} · {formatDate(d.documentDate)}</div>
+                  </a>
+                  {!user.isClient && (
+                    <form action={deleteDocument}>
+                      <AccessField />
+                      <input type="hidden" name="id" value={d.id} />
+                      <ConfirmDeleteButton label="Delete" message="Delete this document permanently?" />
+                    </form>
+                  )}
+                </div>
               ))}
               {building.floorPlans.map((fp) => (
                 <div key={fp.id} className="mb-2 text-sm text-ink-2">Floor plan · {fp.name}</div>

@@ -24,6 +24,12 @@ export async function startInspection(buildingId: string, type = "annual_inspect
     where: { id: buildingId, organizationId: user.organizationId },
   });
   if (!building) throw new Error("Building not found");
+  if (!can(user, "inspections.perform")) throw new Error("Not allowed to create inspections");
+  const existing = await db.inspection.findFirst({
+    where: { buildingId, inspectionType: type, status: { in: ["draft", "in_progress", "submitted"] } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) throw new Error("An active inspection of this type already exists for this building. Open it instead of creating a duplicate.");
 
   const items = await db.inventoryItem.findMany({
     where: { buildingId, recordStatus: { in: ["active", "removed"] } },
@@ -68,6 +74,19 @@ export async function startInspection(buildingId: string, type = "annual_inspect
   await audit({ user, action: "inspection.start", recordType: "inspection", recordId: insp.id });
   revalidatePath("/inspections");
   return insp.id;
+}
+
+export async function cancelInspection(inspectionId: string) {
+  const user = await actor();
+  if (!can(user, "inspections.approve")) throw new Error("Only an inspection approver can cancel an inspection");
+  const inspection = await db.inspection.findFirst({ where: { id: inspectionId, organizationId: user.organizationId } });
+  if (!inspection) throw new Error("Inspection not found");
+  if (inspection.status === "completed") throw new Error("Completed inspections cannot be cancelled");
+  await db.inspection.update({ where: { id: inspectionId }, data: { status: "cancelled", completedAt: new Date() } });
+  await audit({ user, action: "inspection.cancel", recordType: "inspection", recordId: inspectionId, previousValue: inspection });
+  revalidatePath("/inspections");
+  revalidatePath(`/buildings/${inspection.buildingId}`);
+  return { ok: true };
 }
 
 export async function saveInspectionItem(input: {

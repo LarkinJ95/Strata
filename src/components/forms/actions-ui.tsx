@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { startInspection, submitInspection, updateRepairStatus } from "@/actions/mutations";
+import { cancelInspection, startInspection, submitInspection, updateRepairStatus } from "@/actions/mutations";
 import { Disclose } from "@/components/forms/access-field";
 
 type InspectionBuilding = {
@@ -146,4 +146,13 @@ export function RepairStatusButtons({ id }: { id: string }) {
       ))}
     </div>
   );
+}
+
+export function CancelInspectionButton({ inspectionId }: { inspectionId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return <button className="btn btn-danger text-xs" disabled={pending} onClick={() => {
+    if (!window.confirm("Cancel this inspection? It will remain in the audit trail but can no longer be completed.")) return;
+    start(async () => { await cancelInspection(inspectionId); router.refresh(); });
+  }}>{pending ? "Cancelling…" : "Cancel inspection"}</button>;
 }

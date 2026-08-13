@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-
-initOpenNextCloudflareForDev();
+if (process.env.NODE_ENV === "development") {
+  // Loaded only for `next dev`; importing it during production builds can start
+  // the local Cloudflare development bridge unnecessarily.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { initOpenNextCloudflareForDev } = require("@opennextjs/cloudflare");
+  initOpenNextCloudflareForDev();
+}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

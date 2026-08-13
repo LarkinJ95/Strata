@@ -39,3 +39,8 @@ export async function getStoredObject(storageKey: string) {
   const { env } = getCloudflareContext();
   return env.FILES.get(storageKey);
 }
+
+export async function deleteStoredObject(storageKey: string) {
+  const { env } = getCloudflareContext();
+  await env.FILES.delete(storageKey);
+}

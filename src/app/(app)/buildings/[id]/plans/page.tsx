@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getSession, assertBuildingAccess } from "@/lib/auth";
+import { can, getSession, assertBuildingAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PageHeader, Panel } from "@/components/ui/primitives";
 import { fileUrl } from "@/lib/files";
 import { FloorPlanUpload } from "@/components/forms/floor-plan-upload";
+import { AccessField } from "@/components/forms/access-field";
+import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
+import { deleteFloorPlan } from "@/actions/records";
+import { FloorPlanMapper } from "@/components/forms/floor-plan-mapper";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +18,7 @@ export default async function PlansPage({ params }: { params: Promise<{ id: stri
   if (!user) redirect("/login");
   const building = await db.building.findFirst({
     where: { id, organizationId: user.organizationId },
-    include: { floorPlans: { include: { markers: true } }, inventoryItems: true },
+    include: { floors: { orderBy: { level: "asc" } }, floorPlans: { include: { markers: true } }, inventoryItems: true },
   });
   if (!building || !assertBuildingAccess(user, building)) notFound();
 
@@ -27,9 +31,24 @@ export default async function PlansPage({ params }: { params: Promise<{ id: stri
         actions={<Link href={`/buildings/${building.id}`} className="btn btn-ghost">Back</Link>}
       />
       <div className="space-y-6">
+        {can(user, "documents.upload") && (
+          <Panel className="p-5">
+            <div className="mb-3 font-display font-semibold">Upload floor plan</div>
+            <FloorPlanUpload buildingId={building.id} floors={building.floors} />
+          </Panel>
+        )}
         {building.floorPlans.map((fp) => (
           <Panel key={fp.id} className="p-5">
-            <div className="mb-3 font-display font-semibold">{fp.name}</div>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="font-display font-semibold">{fp.name}</div>
+              {!user.isClient && (
+                <form action={deleteFloorPlan}>
+                  <AccessField />
+                  <input type="hidden" name="id" value={fp.id} />
+                  <ConfirmDeleteButton label="Delete floor plan" message="Delete this floor plan and all its map pins? This cannot be undone." />
+                </form>
+              )}
+            </div>
             <div className="relative overflow-hidden rounded-xl border border-[rgba(16,36,72,0.08)] bg-paper-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={fileUrl(fp.storageKey)} alt={fp.name} className="w-full" />
@@ -46,6 +65,7 @@ export default async function PlansPage({ params }: { params: Promise<{ id: stri
                 );
               })}
             </div>
+            {!user.isClient && <div className="mt-4"><FloorPlanMapper plan={fp} items={building.inventoryItems} /></div>}
           </Panel>
         ))}
         {!building.floorPlans.length && <p className="text-ink-3">No drawings uploaded.</p>}

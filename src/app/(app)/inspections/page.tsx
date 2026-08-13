@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { dataScope } from "@/lib/auth";
 import { Chip, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
 import { formatDate, INSPECTION_TYPES } from "@/lib/utils";
-import { AddInspectionControl } from "@/components/forms/actions-ui";
+import { AddInspectionControl, CancelInspectionButton } from "@/components/forms/actions-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +88,7 @@ export default async function InspectionsPage() {
                     <Link href={i.status === "in_progress" || i.status === "draft" ? `/inspections/${i.id}/field` : `/inspections/${i.id}`} className="text-sm text-teal-dim">
                       Open
                     </Link>
+                    {!user.isClient && !["completed", "cancelled"].includes(i.status) && <div className="mt-2"><CancelInspectionButton inspectionId={i.id} /></div>}
                   </td>
                 </tr>
               ))}
