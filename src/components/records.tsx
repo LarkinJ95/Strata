@@ -62,7 +62,7 @@ export function InventoryTable({
                 {r.isProvisional && <div className="chip chip-warn mt-1">Provisional</div>}
                 {r.internalCode && <div className="mt-0.5 text-[10px] text-ink-3">{r.internalCode}</div>}
               </td>
-              <td><div className="font-medium">{r.materialDescription}</div><div className="mt-0.5 text-[10px] text-ink-3">{r.materialCategory}{r.friable ? ` · ${r.friable}` : ""}</div></td>
+              <td><Link href={`/inventory/${r.id}`} className="block rounded hover:text-teal-dim"><div className="font-medium">{r.materialDescription}</div><div className="mt-0.5 text-[10px] text-ink-3">{r.materialCategory}{r.friable ? ` · ${r.friable}` : ""}</div></Link></td>
               {showBuilding && (
                 <td>
                   {r.building ? (
@@ -74,10 +74,7 @@ export function InventoryTable({
                   )}
                 </td>
               )}
-              <td className="text-ink-2">
-                <div>{[r.floor, r.functionalArea?.name ?? r.room].filter(Boolean).join(" · ") || <i className="text-ink-3">no functional area</i>}</div>
-                {r.room && <div className="mt-0.5 text-[10px] text-ink-3">{r.room}</div>}
-              </td>
+              <td className="text-ink-2"><Link href={`/inventory/${r.id}`} className="block rounded hover:text-teal-dim"><div>{[r.floor, r.functionalArea?.name ?? r.room].filter(Boolean).join(" · ") || <i className="text-ink-3">no functional area</i>}</div>{r.room && <div className="mt-0.5 text-[10px] text-ink-3">{r.room}</div>}</Link></td>
               <td>
                 <AcmChip value={r.acmClassification} />
                 {r.asbestosPercent != null && <div className="mt-1 text-[10px] text-ink-3">{r.asbestosPercent}% {parseJson<string[]>(r.fiberTypes, []).join(", ")}</div>}

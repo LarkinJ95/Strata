@@ -183,12 +183,13 @@ table.data tr:hover td { background: rgba(12, 138, 132, 0.028); }
   align-items: center;
   gap: 7px;
   padding: 10px 12px;
-  color: #6a7586;
+  color: #33415a;
   font-size: 13.5px;
+  font-weight: 700;
   border-bottom: 2px solid transparent;
 }
-.bldg-tab:hover { color: #0c1320; }
-.bldg-tab.active { color: #0a5f5b; border-bottom-color: #0b857f; }
+.bldg-tab:hover { color: #0a5f5b; background: #e6f6f5; }
+.bldg-tab.active { color: #0a5f5b; border-bottom-color: #0b857f; background: #e6f6f5; }
 
 .stat-row {
   display: flex;

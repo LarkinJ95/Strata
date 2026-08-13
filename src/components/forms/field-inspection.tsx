@@ -43,6 +43,9 @@ type Item = {
   notes: string | null;
   inspected: boolean;
   photo: string | null;
+  quantityObserved?: number | null;
+  materialRemoved?: boolean;
+  removedQuantity?: number | null;
 };
 
 export function FieldInspection({
@@ -60,6 +63,8 @@ export function FieldInspection({
   const [local, setLocal] = useState(items);
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState("");
+  const [routeOpen, setRouteOpen] = useState(false);
+  const [routeQuery, setRouteQuery] = useState("");
   const item = local[idx];
   const done = local.filter((i) => i.inspected).length;
   const pct = local.length ? Math.round((done / local.length) * 100) : completion;
@@ -74,6 +79,9 @@ export function FieldInspection({
         currentCondition: next.currentCondition ?? undefined,
         currentLabel: next.currentLabel ?? undefined,
         notes: next.notes ?? undefined,
+        quantityObserved: next.quantityObserved,
+        materialRemoved: next.materialRemoved,
+        removedQuantity: next.removedQuantity,
       });
       setSaved("Autosaved");
       setTimeout(() => setSaved(""), 1200);
@@ -103,6 +111,9 @@ export function FieldInspection({
         <Link href={`/inspections/${inspectionId}`} className="btn btn-ghost text-xs">Exit field mode</Link>
       </div>
 
+      <button className="btn btn-ghost mb-4 w-full" onClick={() => setRouteOpen(true)}>Route · {done}/{local.length} complete</button>
+      {routeOpen && <div className="fixed inset-0 z-50 bg-[rgba(12,19,32,0.42)] p-4"><div className="mx-auto mt-8 max-w-xl rounded-2xl bg-white p-4 shadow-xl"><div className="mb-3 flex gap-2"><input autoFocus className="flex-1" placeholder="Search code, material, room" value={routeQuery} onChange={(e) => setRouteQuery(e.target.value)} /><button className="btn btn-ghost" onClick={() => setRouteOpen(false)}>Close</button></div><div className="max-h-[70vh] overflow-y-auto">{local.filter((candidate) => `${candidate.code} ${candidate.material} ${candidate.room || ""}`.toLowerCase().includes(routeQuery.toLowerCase())).map((candidate, candidateIndex) => { const actualIndex = local.findIndex((value) => value.id === candidate.id); return <button key={candidate.id} onClick={() => { setIdx(actualIndex); setRouteOpen(false); }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-paper-2 ${actualIndex === idx ? "bg-teal-soft" : ""}`}><span><span className="mr-2">{candidate.inspected ? "✓" : candidate.currentCondition ? "!" : "○"}</span><b>{candidate.material}</b><span className="ml-2 text-xs text-ink-3">{candidate.code} · {candidate.floor} · {candidate.room}</span></span><span className="text-xs text-ink-3">{candidate.currentCondition?.replaceAll("_", " ") || "Untouched"}</span></button>; })}</div></div></div>}
+
       {building.photoMessage && (
         <div className="mb-4 rounded-xl bg-[#fdecec] px-4 py-3 text-center text-sm font-bold tracking-wide text-[#b42318]">
           {building.photoMessage}
@@ -129,6 +140,7 @@ export function FieldInspection({
               <AcmChip value={item.acm} />
               <span className="chip chip-muted">{item.qty} {item.unit}</span>
               {item.previousCondition && <span className="text-xs text-ink-3">Previously <ConditionChip value={item.previousCondition} /></span>}
+              {item.previousCondition && <button className="btn btn-ghost text-xs" onClick={() => patch({ currentCondition: item.previousCondition, inspected: true })}>✓ Same</button>}
             </div>
           </div>
           {item.photo && (
@@ -150,6 +162,14 @@ export function FieldInspection({
               </button>
             ))}
           </div>
+        </div>
+
+        {item.currentCondition && item.previousCondition && item.currentCondition !== item.previousCondition && <div className="mt-3 rounded-xl bg-[#fff4e0] px-3 py-2 text-sm text-status-attention">{item.previousCondition.replaceAll("_", " ")} → {item.currentCondition.replaceAll("_", " ")}{["damaged", "significantly_damaged", "needs_repair"].includes(item.currentCondition) && " · repair will be suggested at submit"}</div>}
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <label className="field"><span>Qty observed</span><input type="number" value={item.quantityObserved ?? ""} onChange={(e) => patch({ quantityObserved: e.target.value ? Number(e.target.value) : null })} /></label>
+          <label className="field"><span>Removed quantity</span><input type="number" disabled={!item.materialRemoved} value={item.removedQuantity ?? ""} onChange={(e) => patch({ removedQuantity: e.target.value ? Number(e.target.value) : null })} /></label>
+          <label className="field"><span>Removed</span><select value={item.materialRemoved ? "yes" : "no"} onChange={(e) => patch({ materialRemoved: e.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select></label>
         </div>
 
         <div className="mt-6">

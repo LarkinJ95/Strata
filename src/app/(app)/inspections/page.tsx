@@ -34,7 +34,7 @@ export default async function InspectionsPage() {
         kicker="Field program"
         title={user.isClient ? "Inspections" : "My inspections"}
         description="Resume drafts, finish verification, and keep the surveillance calendar current."
-        actions={!user.isClient && <AddInspectionControl buildings={buildings} />}
+        actions={!user.isClient && <><AddInspectionControl buildings={buildings} /><Link href="/inspections/new/historical" className="btn btn-ghost">Add historical record</Link></>}
       />
 
       {mine && (
@@ -75,7 +75,7 @@ export default async function InspectionsPage() {
       <Panel className="overflow-hidden">
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Date</th><th>Building</th><th>Type</th><th>Inspector</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Building</th><th>Type</th><th>Inspector</th><th>Records</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {all.map((i) => (
                 <tr key={i.id}>
@@ -83,6 +83,7 @@ export default async function InspectionsPage() {
                   <td>{i.building.buildingNumber} · {i.building.name}</td>
                   <td className="capitalize">{i.inspectionType.replaceAll("_", " ")}</td>
                   <td>{i.inspector?.name}</td>
+                  <td>{i.signedAt && i.createdAt.getTime() - i.signedAt.getTime() > 24 * 60 * 60 * 1000 ? <Chip tone="ice">Historical</Chip> : "—"}</td>
                   <td><Chip tone={i.status === "completed" ? "ok" : i.status === "in_progress" ? "ice" : "warn"}>{i.status.replaceAll("_", " ")}</Chip></td>
                   <td>
                     <Link href={i.status === "in_progress" || i.status === "draft" ? `/inspections/${i.id}/field` : `/inspections/${i.id}`} className="text-sm text-teal-dim">

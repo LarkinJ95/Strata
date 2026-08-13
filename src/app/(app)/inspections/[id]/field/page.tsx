@@ -47,6 +47,9 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         previousLabel: it.previousLabel,
         currentLabel: it.currentLabel,
         notes: it.notes,
+        quantityObserved: it.quantityObserved,
+        materialRemoved: it.materialRemoved,
+        removedQuantity: it.removedQuantity,
         inspected: it.inspected,
         photo: it.inventoryItem.photoLinks[0]?.photo.storageKey ?? null,
       }))}

@@ -99,6 +99,10 @@ export async function saveInspectionItem(input: {
   removedQuantity?: number | null;
 }) {
   const user = await actor();
+  const existing = await db.inspectionItem.findUnique({ where: { id: input.itemId }, include: { inspection: { include: { building: true } } } });
+  if (!existing || existing.inspection.organizationId !== user.organizationId) throw new Error("Inspection item not found");
+  const photoRequired = existing.inspection.building.photoPolicy !== "prohibited" && ["damaged", "significantly_damaged", "needs_repair", "removed"].includes(input.currentCondition || "");
+  const photoSinceStart = photoRequired ? await db.photoLink.findFirst({ where: { inventoryItemId: existing.inventoryItemId, photo: { uploadedAt: { gte: existing.inspection.startedAt ?? existing.inspection.createdAt } } }, select: { id: true } }) : null;
   const item = await db.inspectionItem.update({
     where: { id: input.itemId },
     data: {
@@ -109,10 +113,9 @@ export async function saveInspectionItem(input: {
       materialRemoved: input.materialRemoved ?? false,
       removedQuantity: input.removedQuantity ?? undefined,
       inspected: Boolean(input.currentCondition),
-      inspectedAt: input.currentCondition ? new Date() : null,
-      photoRequired: ["damaged", "significantly_damaged", "needs_repair", "removed"].includes(
-        input.currentCondition || ""
-      ),
+      inspectedAt: input.currentCondition ? (existing.inspection.completedAt ?? existing.inspection.startedAt ?? new Date()) : null,
+      photoRequired,
+      photosSatisfied: photoRequired ? Boolean(photoSinceStart) : true,
     },
     include: { inspection: true },
   });
@@ -139,6 +142,9 @@ export async function submitInspection(inspectionId: string, signatureName: stri
     include: { items: true, building: true },
   });
   if (!insp) throw new Error("Inspection not found");
+  const performedAt = insp.completedAt ?? new Date();
+  const blockers = insp.items.filter((item) => item.photoRequired && !item.photosSatisfied && insp.building.photoPolicy !== "prohibited");
+  if (blockers.length) throw new Error(`${blockers.length} inspection item(s) require a photograph before submission`);
 
   for (const item of insp.items) {
     if (!item.inspected || !item.currentCondition) continue;
@@ -153,6 +159,7 @@ export async function submitInspection(inspectionId: string, signatureName: stri
           inspectionId,
           inspectorId: user.id,
           notes: item.notes,
+          changedAt: performedAt,
         },
       });
     }
@@ -166,26 +173,20 @@ export async function submitInspection(inspectionId: string, signatureName: stri
           labelMissing: item.currentLabel === "missing",
           inspectionId,
           changedById: user.id,
+          changedAt: performedAt,
         },
       });
     }
-    await db.inventoryItem.update({
-      where: { id: inv.id },
-      data: {
-        condition: item.currentCondition,
-        labelCondition: item.currentLabel ?? inv.labelCondition,
-        labelPresent: item.currentLabel ? item.currentLabel !== "missing" : inv.labelPresent,
-        recordStatus: item.currentCondition === "removed" ? "removed" : inv.recordStatus,
-      },
-    });
+    const newerExists = await db.inspectionItem.findFirst({ where: { inventoryItemId: inv.id, inspected: true, inspectionId: { not: inspectionId }, inspection: { status: "completed", completedAt: { gt: performedAt } } }, select: { id: true } });
+    if (!newerExists) await db.inventoryItem.update({ where: { id: inv.id }, data: { condition: item.currentCondition, labelCondition: item.currentLabel ?? inv.labelCondition, labelPresent: item.currentLabel ? item.currentLabel !== "missing" : inv.labelPresent, recordStatus: item.currentCondition === "removed" ? "removed" : inv.recordStatus } });
   }
 
   await db.inspection.update({
     where: { id: inspectionId },
     data: {
       status: "completed",
-      completedAt: new Date(),
-      signedAt: new Date(),
+      completedAt: performedAt,
+      signedAt: performedAt,
       notes: notes ?? insp.notes,
       completionPct: 100,
     },
@@ -199,15 +200,10 @@ export async function submitInspection(inspectionId: string, signatureName: stri
       signerRole: user.roleName,
       signatureData: signatureName || user.name,
       meaning: "Inspection completion",
+      signedAt: performedAt,
     },
   });
-  await db.building.update({
-    where: { id: insp.buildingId },
-    data: {
-      lastInspectionAt: new Date(),
-      nextInspectionAt: new Date(Date.now() + (insp.building.inspectionIntervalDays || 365) * 86400000),
-    },
-  });
+  if (!insp.building.lastInspectionAt || performedAt > insp.building.lastInspectionAt) await db.building.update({ where: { id: insp.buildingId }, data: { lastInspectionAt: performedAt, nextInspectionAt: new Date(performedAt.getTime() + (insp.building.inspectionIntervalDays || 365) * 86400000) } });
   await persistBuildingCompliance(insp.buildingId);
   await activity({
     user,
@@ -222,6 +218,29 @@ export async function submitInspection(inspectionId: string, signatureName: stri
   revalidatePath("/inspections");
   revalidatePath(`/buildings/${insp.buildingId}`);
   return { ok: true };
+}
+
+export async function saveHistoricalInspection(input: { buildingId: string; inspectionType: string; performedAt: Date; inspectorName: string; findings?: string; notes?: string; status: "draft" | "completed"; items: { inventoryItemId: string; currentCondition?: string; currentLabel?: string; quantityObserved?: number; materialRemoved?: boolean; removedQuantity?: number; notes?: string }[] }) {
+  const user = await actor();
+  if (!can(user, "inspections.perform")) throw new Error("Not allowed to record inspections");
+  if (input.performedAt > new Date()) throw new Error("Historical inspection dates cannot be in the future");
+  const building = await db.building.findFirst({ where: { id: input.buildingId, organizationId: user.organizationId } });
+  if (!building) throw new Error("Building not found");
+  const filled = input.items.filter((item) => item.currentCondition || item.currentLabel || item.quantityObserved != null || item.materialRemoved || item.notes);
+  const inspection = await db.inspection.create({ data: { organizationId: user.organizationId, clientId: building.clientId, buildingId: building.id, inspectionType: input.inspectionType, scheduledDate: input.performedAt, startedAt: input.performedAt, completedAt: input.status === "completed" ? input.performedAt : null, signedAt: input.status === "completed" ? input.performedAt : null, status: input.status, completionPct: filled.length ? 100 : 0, findings: input.findings, notes: input.notes } });
+  let applied = 0;
+  for (const entry of filled) {
+    const inv = await db.inventoryItem.findFirst({ where: { id: entry.inventoryItemId, buildingId: building.id } });
+    if (!inv) continue;
+    const previous = await db.inventoryConditionHistory.findFirst({ where: { inventoryItemId: inv.id, changedAt: { lte: input.performedAt } }, orderBy: { changedAt: "desc" } });
+    await db.inspectionItem.create({ data: { inspectionId: inspection.id, inventoryItemId: inv.id, previousCondition: previous?.newCondition, currentCondition: entry.currentCondition, currentLabel: entry.currentLabel, quantityObserved: entry.quantityObserved, materialRemoved: entry.materialRemoved ?? false, removedQuantity: entry.removedQuantity, notes: entry.notes, inspected: Boolean(entry.currentCondition), inspectedAt: input.performedAt } });
+    if (entry.currentCondition) { await db.inventoryConditionHistory.create({ data: { inventoryItemId: inv.id, previousCondition: previous?.newCondition, newCondition: entry.currentCondition, inspectionId: inspection.id, inspectorId: user.id, notes: entry.notes, changedAt: input.performedAt } }); const newer = await db.inspectionItem.findFirst({ where: { inventoryItemId: inv.id, inspected: true, inspection: { status: "completed", completedAt: { gt: input.performedAt } } } }); if (!newer && input.status === "completed") { await db.inventoryItem.update({ where: { id: inv.id }, data: { condition: entry.currentCondition, recordStatus: entry.currentCondition === "removed" ? "removed" : inv.recordStatus } }); applied++; } }
+  }
+  if (input.status === "completed" && (!building.lastInspectionAt || input.performedAt > building.lastInspectionAt)) await db.building.update({ where: { id: building.id }, data: { lastInspectionAt: input.performedAt, nextInspectionAt: new Date(input.performedAt.getTime() + building.inspectionIntervalDays * 86400000) } });
+  if (input.status === "completed") await db.signature.create({ data: { organizationId: user.organizationId, inspectionId: inspection.id, userId: user.id, signerName: input.inspectorName, signatureData: input.inspectorName, meaning: "Historical entry", signedAt: input.performedAt } });
+  await activity({ user, organizationId: user.organizationId, clientId: building.clientId, buildingId: building.id, inspectionId: inspection.id, eventType: "inspection", title: "Historical inspection recorded", detail: input.performedAt.toISOString().slice(0, 10) });
+  await audit({ user, action: "inspection.backfill", recordType: "inspection", recordId: inspection.id, newValue: input });
+  revalidatePath("/inspections"); revalidatePath(`/buildings/${building.id}`); return { id: inspection.id, applied, historyOnly: filled.length - applied };
 }
 
 export async function createSample(input: {
