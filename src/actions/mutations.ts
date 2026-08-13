@@ -1,11 +1,13 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { assertBuildingAccess, can, getSession } from "@/lib/auth";
 import { activity, audit } from "@/lib/audit";
 import { persistBuildingCompliance } from "@/lib/compliance";
 import { putUpload } from "@/lib/storage";
+import { requiresFieldSample } from "@/lib/inspection-rules";
 
 async function actor() {
   const user = await getSession();
@@ -99,10 +101,13 @@ export async function saveInspectionItem(input: {
   removedQuantity?: number | null;
 }) {
   const user = await actor();
-  const existing = await db.inspectionItem.findUnique({ where: { id: input.itemId }, include: { inspection: { include: { building: true } } } });
+  const existing = await db.inspectionItem.findUnique({ where: { id: input.itemId }, include: { inspection: { include: { building: true } }, inventoryItem: true } });
   if (!existing || existing.inspection.organizationId !== user.organizationId) throw new Error("Inspection item not found");
   const photoRequired = existing.inspection.building.photoPolicy !== "prohibited" && ["damaged", "significantly_damaged", "needs_repair", "removed"].includes(input.currentCondition || "");
   const photoSinceStart = photoRequired ? await db.photoLink.findFirst({ where: { inventoryItemId: existing.inventoryItemId, photo: { uploadedAt: { gte: existing.inspection.startedAt ?? existing.inspection.createdAt } } }, select: { id: true } }) : null;
+  const sampleRequired = requiresFieldSample(existing.inventoryItem.acmClassification, input.currentCondition);
+  const sampleSinceStart = sampleRequired ? await db.sampleInventoryLink.findFirst({ where: { inventoryItemId: existing.inventoryItemId, sample: { collectionDate: { gte: existing.inspection.startedAt ?? existing.inspection.createdAt } } }, select: { id: true } }) : null;
+  const inspected = Boolean(input.currentCondition) && (!sampleRequired || Boolean(sampleSinceStart));
   const item = await db.inspectionItem.update({
     where: { id: input.itemId },
     data: {
@@ -112,8 +117,8 @@ export async function saveInspectionItem(input: {
       quantityObserved: input.quantityObserved ?? undefined,
       materialRemoved: input.materialRemoved ?? false,
       removedQuantity: input.removedQuantity ?? undefined,
-      inspected: Boolean(input.currentCondition),
-      inspectedAt: input.currentCondition ? (existing.inspection.completedAt ?? existing.inspection.startedAt ?? new Date()) : null,
+      inspected,
+      inspectedAt: inspected ? (existing.inspection.completedAt ?? existing.inspection.startedAt ?? new Date()) : null,
       photoRequired,
       photosSatisfied: photoRequired ? Boolean(photoSinceStart) : true,
     },
@@ -135,6 +140,85 @@ export async function saveInspectionItem(input: {
   return { pct };
 }
 
+export async function collectInspectionItemSample(itemId: string) {
+  const user = await actor();
+  if (!can(user, "samples.add")) throw new Error("Not allowed to collect samples");
+  const item = await db.inspectionItem.findUnique({
+    where: { id: itemId },
+    include: { inspection: true, inventoryItem: true },
+  });
+  if (!item || item.inspection.organizationId !== user.organizationId) throw new Error("Inspection item not found");
+  if (!requiresFieldSample(item.inventoryItem.acmClassification, item.currentCondition)) {
+    throw new Error("A field sample is not required for this material and condition");
+  }
+
+  const collectedAfter = item.inspection.startedAt ?? item.inspection.createdAt;
+  const existing = await db.sampleInventoryLink.findFirst({
+    where: {
+      inventoryItemId: item.inventoryItemId,
+      sample: { collectionDate: { gte: collectedAfter } },
+    },
+    include: { sample: true },
+  });
+  if (existing) return { id: existing.sample.id, sampleNumber: existing.sample.sampleNumber };
+
+  const prefix = String(new Date().getFullYear()).slice(-2);
+  const last = await db.sample.findFirst({
+    where: { organizationId: user.organizationId, sampleNumber: { startsWith: `${prefix}-` } },
+    orderBy: { sampleNumber: "desc" },
+  });
+  const sampleNumber = nextCode(prefix, last?.sampleNumber);
+  const inventory = item.inventoryItem;
+  const sample = await db.sample.create({
+    data: {
+      organizationId: user.organizationId,
+      clientId: inventory.clientId,
+      buildingId: inventory.buildingId,
+      homogeneousAreaId: inventory.homogeneousAreaId,
+      sampleNumber,
+      floor: inventory.floor,
+      room: inventory.room,
+      location: inventory.specificLocation,
+      material: inventory.materialDescription,
+      materialDescription: inventory.materialDescription,
+      notes: `Required field sample collected during inspection ${item.inspectionId}`,
+      collectionDate: new Date(),
+      inspectorId: user.id,
+      status: "collected",
+    },
+  });
+  await db.sampleLayer.create({ data: { sampleId: sample.id, layerNumber: 1, description: inventory.materialDescription } });
+  await db.sampleInventoryLink.create({ data: { sampleId: sample.id, inventoryItemId: inventory.id, layerNumber: 1, linkType: "supporting" } });
+  if (item.currentCondition) await db.inspectionItem.update({ where: { id: item.id }, data: { inspected: true, inspectedAt: new Date() } });
+  const total = await db.inspectionItem.count({ where: { inspectionId: item.inspectionId } });
+  const done = await db.inspectionItem.count({ where: { inspectionId: item.inspectionId, inspected: true } });
+  await db.inspection.update({ where: { id: item.inspectionId }, data: { completionPct: total ? Math.round((done / total) * 100) : 0 } });
+  await activity({
+    user,
+    organizationId: user.organizationId,
+    clientId: inventory.clientId,
+    buildingId: inventory.buildingId,
+    inspectionId: item.inspectionId,
+    sampleId: sample.id,
+    eventType: "sample",
+    title: `Sample ${sampleNumber} collected`,
+    detail: `${inventory.inventoryCode} · required by field condition`,
+  });
+  await audit({
+    user,
+    action: "inspection.sample.collect",
+    recordType: "sample",
+    recordId: sample.id,
+    newValue: { inspectionItemId: item.id, inventoryItemId: inventory.id, sampleNumber },
+    relatedInspectionId: item.inspectionId,
+  });
+  revalidatePath(`/inspections/${item.inspectionId}/field`);
+  revalidatePath(`/inspections/${item.inspectionId}`);
+  revalidatePath(`/buildings/${inventory.buildingId}`);
+  revalidatePath("/samples");
+  return { id: sample.id, sampleNumber };
+}
+
 export async function submitInspection(inspectionId: string, signatureName: string, notes?: string) {
   const user = await actor();
   const insp = await db.inspection.findFirst({
@@ -145,6 +229,22 @@ export async function submitInspection(inspectionId: string, signatureName: stri
   const performedAt = insp.completedAt ?? new Date();
   const blockers = insp.items.filter((item) => item.photoRequired && !item.photosSatisfied && insp.building.photoPolicy !== "prohibited");
   if (blockers.length) throw new Error(`${blockers.length} inspection item(s) require a photograph before submission`);
+  const sampleBlockers = await db.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT ii."id"
+    FROM "InspectionItem" ii
+    INNER JOIN "InventoryItem" inv ON inv."id" = ii."inventoryItemId"
+    WHERE ii."inspectionId" = ${inspectionId}
+      AND ii."currentCondition" IN ('damaged', 'significantly_damaged', 'needs_repair')
+      AND inv."acmClassification" IN ('assumed_acm', 'pacm')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "SampleInventoryLink" sampleLink
+        INNER JOIN "Sample" sample ON sample."id" = sampleLink."sampleId"
+        WHERE sampleLink."inventoryItemId" = inv."id"
+          AND sample."collectionDate" >= ${insp.startedAt ?? insp.createdAt}
+      )
+  `);
+  if (sampleBlockers.length) throw new Error(`${sampleBlockers.length} assumed/PACM inspection item(s) require a field sample before submission`);
 
   for (const item of insp.items) {
     if (!item.inspected || !item.currentCondition) continue;

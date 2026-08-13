@@ -4,37 +4,126 @@
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { CONDITION_LABELS, formatQty } from "@/lib/utils";
 import { canReadStorageKey, getStoredObject } from "@/lib/storage";
+import { UNASSIGNED_LABEL, UNASSIGNED_LEVEL } from "@/lib/floor-order";
 
-export type PacketOptions = { paper?: "letter" | "legal" | "a4" | "a3"; orientation?: "portrait" | "landscape"; density?: "standard" | "compact"; nestLayers?: boolean; groupRepeated?: boolean; includeFloorPlans?: boolean; includeRemoved?: boolean; floor?: string; functionalAreaId?: string };
-export type PacketItem = { id?: string; inventoryCode: string; materialDescription: string; materialCategory?: string | null; floor: string | null; room: string | null; specificLocation: string | null; currentQuantity: number | null; quantityUnit: string; condition: string; labelCondition: string | null; acmClassification: string; functionalArea?: { id: string; name: string; faCode: string | null } | null; homogeneousAreaId?: string | null; sampleLinks?: { sample: { sampleNumber: string } }[]; inspectionItems?: { previousCondition: string | null; inspection: { completedAt: Date | null } }[]; recordStatus?: string; hasOpenRepair?: boolean };
+export type PacketOptions = { paper?: "letter" | "legal" | "a4" | "a3"; orientation?: "portrait" | "landscape"; density?: "standard" | "compact"; nestLayers?: boolean; groupRepeated?: boolean; includeFloorPlans?: boolean; includeRemoved?: boolean; floor?: string; functionalAreaId?: string; floorOrder?: "ascending" | "descending" };
+export type PacketItem = { id?: string; inventoryCode: string; materialDescription: string; materialCategory?: string | null; floor: string | null; floorLevel?: number; floorLabel?: string; room: string | null; specificLocation: string | null; currentQuantity: number | null; quantityUnit: string; condition: string; labelCondition: string | null; acmClassification: string; functionalArea?: { id: string; name: string; faCode: string | null } | null; homogeneousAreaId?: string | null; sampleLinks?: { sample: { sampleNumber: string } }[]; inspectionItems?: { previousCondition: string | null; inspection: { completedAt: Date | null } }[]; recordStatus?: string; hasOpenRepair?: boolean };
 type PacketBuilding = { organizationId: string; id?: string; name: string; buildingNumber: string; address: string | null; yearConstructed: number | null; squareFootage: number | null; buildingUse: string | null; lastInspectionAt: Date | null; nextInspectionAt: Date | null; photoPolicy: string; notes: string | null; client: { name: string; clientNumber: string }; facility: { name: string; facilityId: string }; organizationName: string; organizationAddress?: string | null; inventoryItems: PacketItem[]; floorPlans: { name: string; storageKey: string; mimeType: string }[]; ppe?: { item: string; required: boolean }[]; openRepairs?: { repairCode: string; problem: string }[] };
 type Row = { item: PacketItem; members: PacketItem[]; group: string; layer: boolean; sample: string; previous: string; height: number };
 export type PacketPage = { group?: string; rows: Row[]; first: boolean };
 const SIZES: Record<string, [number, number]> = { letter: [612, 792], legal: [612, 1008], a4: [595, 842], a3: [842, 1191] };
-const conditionKey = [["OK", "Previous condition"], ["F", CONDITION_LABELS.fair], ["D", CONDITION_LABELS.damaged], ["S", CONDITION_LABELS.significantly_damaged], ["R", CONDITION_LABELS.needs_repair], ["X", CONDITION_LABELS.removed], ["N", CONDITION_LABELS.inaccessible]];
+const conditionKey = [["OK", "No change since last inspection"], ["F", CONDITION_LABELS.fair], ["D", CONDITION_LABELS.damaged], ["S", CONDITION_LABELS.significantly_damaged], ["R", CONDITION_LABELS.needs_repair], ["X", CONDITION_LABELS.removed], ["N", `${CONDITION_LABELS.inaccessible} — cannot reach`]];
+// N is deliberately the same mnemonic as the condition code, so "cannot reach" is one
+// letter to remember across both write-in cells rather than two.
+const labelKey = [["OK", "Label present, legible"], ["R", "Replaced — you applied a new label"], ["M", "Missing — could not replace"], ["N", "Cannot reach to check or re-tag"], ["–", "Not required — concealed"]];
 
-function geometry(options: PacketOptions) { const portrait = (options.orientation ?? "portrait") === "portrait"; const [w, h] = SIZES[options.paper ?? "letter"]; const width = portrait ? w : h; const height = portrait ? h : w; const compact = options.density === "compact"; const cols = portrait ? [24, 24, 38, 30, 170, 90, 50, 104] : [26, 26, 38, 50, 190, 106, 52, 150]; return { width, height, portrait, cols, margin: 22, row: compact ? 11 : 12.5, band: portrait ? 100 : 88 }; }
+// Shared vertical metrics so pagination and rendering can never drift apart.
+const TABLE_TOP = 37, COL_HEADER = 14, GROUP_HEADER = 14, FOOT_RESERVE = 44, CELL_PAD = 5;
+export const COLUMN_HEADERS = ["COND.", "LABEL", "ITEM #", "SAMPLE #", "LOCATION DESCRIPTION", "MATERIAL IDENTIFICATION", "EST. QUANTITY", "FIELD NOTES · CORRECTIONS"];
+const LOCATION_COL = 4;
+// Location description is the only column allowed to wrap; the rest are sized to their
+// widest value so a material name or sample number never breaks across lines.
+const SIZED = [
+  { col: 2, min: 26, max: 90, floor: 26 },
+  { col: 3, min: 32, max: 110, floor: 32 },
+  { col: 5, min: 70, max: 220, floor: 70 },
+  { col: 6, min: 36, max: 96, floor: 36 },
+];
+const MIN_LOCATION = 110, MIN_NOTES = 70;
+
+function geometry(options: PacketOptions) { const portrait = (options.orientation ?? "portrait") === "portrait"; const [w, h] = SIZES[options.paper ?? "letter"]; const width = portrait ? w : h; const height = portrait ? h : w; const compact = options.density === "compact"; const font = { body: compact ? 6.5 : 7.5, head: compact ? 6 : 6.5, group: compact ? 7 : 7.5 }; return { width, height, portrait, font, margin: 22, row: compact ? 12.5 : 14, band: 92 }; }
+
+// PDFKit measures text exactly; a character-count estimate over-allocated by ~40%, which
+// cost a whole page on a building the size of 1707.
+let metrics: PDFKit.PDFDocument | null = null;
+function measurer(): PDFKit.PDFDocument { return (metrics ??= new PDFDocument({ size: [612, 792], margin: 0 })); }
+function textHeight(text: string, width: number, size: number) { if (!text) return 0; const doc = measurer(); doc.font("Helvetica").fontSize(size); return doc.heightOfString(text, { width }) as number; }
+function textWidth(text: string, size: number, bold = false) { if (!text) return 0; const doc = measurer(); doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(size); return doc.widthOfString(text) as number; }
+
+type RowText = { code: string; sample: string; location: string; material: string; quantity: string };
+
+/** Column widths sized to this building's own content, with location taking the slack. */
+function columnWidths(text: RowText[], g: ReturnType<typeof geometry>): number[] {
+  // Write-in cells are sized to hold a handwritten code, but never narrower than their
+  // own column label — a wrapped "LABEL" header reads as two broken words.
+  const mark = Math.ceil(Math.max(g.portrait ? 24 : 26, textWidth(COLUMN_HEADERS[0], g.font.head, true) + 7, textWidth(COLUMN_HEADERS[1], g.font.head, true) + 7));
+  const cols = [mark, mark, 0, 0, 0, 0, 0, 0];
+  const values: Record<number, string[]> = { 2: text.map((t) => t.code), 3: text.map((t) => t.sample), 5: text.map((t) => t.material), 6: text.map((t) => t.quantity) };
+  for (const { col, min, max } of SIZED) {
+    const widest = Math.max(textWidth(COLUMN_HEADERS[col], g.font.head, true), ...values[col].map((value) => textWidth(value, g.font.body)));
+    cols[col] = Math.ceil(Math.min(max, Math.max(min, widest + 7)));
+  }
+  const available = g.width - g.margin * 2;
+  let slack = available - cols.reduce((sum, width) => sum + width, 0);
+  // Only when a building's own text cannot fit the sheet: give back width from the widest
+  // sized column first, so the location lane keeps a usable minimum.
+  for (const { col, floor } of [...SIZED].sort((a, b) => cols[b.col] - cols[a.col])) {
+    if (slack >= MIN_LOCATION + MIN_NOTES) break;
+    const give = Math.min(cols[col] - floor, MIN_LOCATION + MIN_NOTES - slack);
+    cols[col] -= give; slack += give;
+  }
+  const notes = Math.max(MIN_NOTES, Math.min(160, Math.round(slack * 0.36)));
+  cols[7] = notes; cols[LOCATION_COL] = slack - notes;
+  return cols;
+}
+
+export type PacketLayout = { cols: number[]; pages: PacketPage[] };
+
+/** Pure pagination and column sizing, shared by the PDF and the packet preview. */
+export function packetLayout(items: PacketItem[], options: PacketOptions = {}): PacketLayout {
+  const g = geometry(options); const visible = items.filter((item) => (options.includeRemoved || item.recordStatus !== "removed") && (!options.floor || item.floor === options.floor) && (!options.functionalAreaId || item.functionalArea?.id === options.functionalAreaId));
+  // Sort on BuildingFloor.level, not the free-text floor name, then functional area, room, code.
+  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const direction = options.floorOrder === "descending" ? -1 : 1;
+  const decorated = visible.map((item) => ({ item, level: item.floorLevel ?? UNASSIGNED_LEVEL, label: item.floorLabel || item.floor || UNASSIGNED_LABEL, area: item.functionalArea ? `${item.functionalArea.faCode ?? ""} ${item.functionalArea.name}`.trim() : "" }));
+  decorated.sort((a, b) => {
+    const unplaced = Number(a.level === UNASSIGNED_LEVEL) - Number(b.level === UNASSIGNED_LEVEL);
+    return unplaced || (a.level - b.level) * direction || collate.compare(a.label, b.label) || collate.compare(a.area, b.area) || collate.compare(a.item.room ?? "", b.item.room ?? "") || collate.compare(a.item.inventoryCode, b.item.inventoryCode);
+  });
+  const draft: { entry: (typeof decorated)[number]; group: string; layer: boolean; text: RowText }[] = []; let prior = "";
+  for (const entry of decorated) { const item = entry.item; const group = entry.area ? `${entry.label} · ${entry.area}` : entry.label; const sample = item.sampleLinks?.[0]?.sample.sampleNumber || (item.acmClassification === "pacm" ? "PACM" : ""); const location = [item.room, item.specificLocation].filter(Boolean).join(" · "); const stem = sample.replace(/[A-Za-z]+$/, ""); const layer = Boolean(options.nestLayers && stem && prior === `${group}|${stem}|${location}`); prior = `${group}|${stem}|${location}`; draft.push({ entry, group, layer, text: { code: item.inventoryCode, sample, location, material: `${item.materialDescription}${layer ? " (layer)" : ""}`, quantity: layer ? "-" : formatQty(item.currentQuantity, item.quantityUnit) } }); }
+  const cols = columnWidths(draft.map((row) => row.text), g);
+  const rows: Row[] = draft.map(({ entry, group, layer, text }) => ({ item: entry.item, members: [entry.item], group, layer, sample: text.sample, previous: entry.item.inspectionItems?.[0]?.previousCondition || entry.item.condition, height: Math.max(g.row, textHeight(text.location, cols[LOCATION_COL] - 4, g.font.body) + CELL_PAD) }));
+  const pages: PacketPage[] = []; let page: PacketPage = { rows: [], first: true }; let y = TABLE_TOP + g.band + COL_HEADER; const usable = g.height - FOOT_RESERVE;
+  for (const row of rows) { const newGroup = page.rows.length === 0 || page.group !== row.group; const needed = row.height + (newGroup ? GROUP_HEADER : 0); if (y + needed > usable && page.rows.length) { pages.push(page); page = { rows: [], first: false }; y = TABLE_TOP + COL_HEADER; } if (newGroup) { page.group = row.group; y += GROUP_HEADER; } page.rows.push(row); y += row.height; }
+  if (page.rows.length || !pages.length) pages.push(page); return { cols, pages };
+}
 
 /** Pure pagination shared by the PDF and packet preview. */
-export function layoutRows(items: PacketItem[], options: PacketOptions = {}): PacketPage[] {
-  const g = geometry(options); const visible = items.filter((item) => (options.includeRemoved || item.recordStatus !== "removed") && (!options.floor || item.floor === options.floor) && (!options.functionalAreaId || item.functionalArea?.id === options.functionalAreaId));
-  const sorted = [...visible].sort((a, b) => `${a.floor ?? ""}|${a.functionalArea?.name ?? a.room ?? ""}|${a.inventoryCode}`.localeCompare(`${b.floor ?? ""}|${b.functionalArea?.name ?? b.room ?? ""}|${b.inventoryCode}`, undefined, { numeric: true }));
-  const rowItems = sorted.map((item) => [item]);
-  const rows: Row[] = []; let prior = "";
-  for (const members of rowItems) { const item = members[0]; const group = item.functionalArea ? `${item.floor || "Unassigned level"} · ${item.functionalArea.faCode ? `${item.functionalArea.faCode} · ` : ""}${item.functionalArea.name}` : (item.floor || "Unassigned level"); const sample = item.sampleLinks?.[0]?.sample.sampleNumber || (item.acmClassification === "pacm" ? "PACM" : ""); const location = [item.room, item.specificLocation].filter(Boolean).join(" · "); const stem = sample.replace(/[A-Za-z]+$/, ""); const layer = Boolean(options.nestLayers && members.length === 1 && stem && prior === `${group}|${stem}|${location}`); prior = `${group}|${stem}|${location}`; const previous = item.inspectionItems?.[0]?.previousCondition || item.condition; const textLines = Math.max(1, Math.ceil(location.length / (g.portrait ? 48 : 58)), Math.ceil(item.materialDescription.length / (g.portrait ? 26 : 32))); rows.push({ item, members, group, layer, sample, previous, height: g.row * textLines }); }
-  const pages: PacketPage[] = []; let page: PacketPage = { rows: [], first: true }; let y = 46 + g.band + 14; const usable = g.height - 44;
-  for (const row of rows) { const newGroup = page.rows.length === 0 || page.group !== row.group; const needed = row.height + (newGroup ? 13 : 0); if (y + needed > usable && page.rows.length) { pages.push(page); page = { rows: [], first: false }; y = 60; } if (newGroup) { page.group = row.group; y += 13; } page.rows.push(row); y += row.height; }
-  if (page.rows.length || !pages.length) pages.push(page); return pages;
-}
+export function layoutRows(items: PacketItem[], options: PacketOptions = {}): PacketPage[] { return packetLayout(items, options).pages; }
 
 /** Exact packet page count used by both the generated PDF and preview. */
 export function packetPageCount(items: PacketItem[], options: PacketOptions = {}, floorPlanCount = 0) { return layoutRows(items, options).length + (options.includeFloorPlans === false ? 0 : floorPlanCount); }
 
-function header(doc: PDFKit.PDFDocument, building: PacketBuilding, page: number, total: number) { doc.fillColor("#101828").font("Helvetica-Bold").fontSize(11).text("ANNUAL ASBESTOS VISUAL EVALUATION", 22, 10); doc.strokeColor("#c8d1db").lineWidth(.5).moveTo(22, 29).lineTo(doc.page.width - 22, 29).stroke(); const fy = doc.page.height - 20; doc.moveTo(22, fy - 5).lineTo(doc.page.width - 22, fy - 5).stroke(); doc.fillColor("#546273").fontSize(6.5).text(`${building.buildingNumber} · PAGE ${page} OF ${total}`, 22, fy); }
-function cell(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, bold = false, white = false) { if (white) doc.rect(x, y, w, h).fill("#fff"); doc.strokeColor("#b8c4d0").lineWidth(white ? 1 : .5).rect(x, y, w, h).stroke(); doc.fillColor("#142033").font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(6.6).text(text, x + 2, y + 3, { width: w - 4, height: h - 4, ellipsis: false }); }
-function briefBand(doc: PDFKit.PDFDocument, _building: PacketBuilding, g: ReturnType<typeof geometry>) { const x = g.margin; const y = 43; const w = g.width - x * 2; doc.font("Helvetica-Bold").fontSize(7).fillColor("#0a5f5b").text("WHAT TO CHECK", x, y); doc.font("Helvetica").fillColor("#33415a").text("ACM not damaged or deteriorated\nEncapsulation and jacketing intact\nLabels legible and visible\nInventory location is correct\nDO NOT DISTURB OR REPAIR ACM", x, y + 12, { width: w * .45 }); const kx = x + w * .5; doc.font("Helvetica-Bold").fillColor("#0a5f5b").text("CODE KEY - WRITE ONE CODE", kx, y); doc.font("Helvetica").fillColor("#33415a").text(conditionKey.map(([code, gloss]) => `${code}  ${gloss}`).join("\n"), kx, y + 12, { width: w * .5 }); doc.fontSize(6.5).text("Label: OK present · R replaced · M missing · - not required\nAny code other than OK requires a note. Blank = not inspected.", x, y + g.band - 28, { width: w }); }
+function header(doc: PDFKit.PDFDocument, building: PacketBuilding, page: number, total: number) { const w = doc.page.width; doc.fillColor("#101828").font("Helvetica-Bold").fontSize(11).text("ANNUAL ASBESTOS VISUAL EVALUATION", 0, 8, { width: w, align: "center" }); doc.font("Helvetica").fontSize(7).fillColor("#546273").text(`${building.buildingNumber} · ${building.name} · ${building.client.name}`, 0, 21, { width: w, align: "center" }); doc.strokeColor("#c8d1db").lineWidth(.5).moveTo(22, 33).lineTo(w - 22, 33).stroke(); const fy = doc.page.height - 20; doc.moveTo(22, fy - 5).lineTo(w - 22, fy - 5).stroke(); doc.fillColor("#546273").fontSize(6.5).text(`${building.buildingNumber} · PAGE ${page} OF ${total}`, 0, fy, { width: w, align: "center" }); }
+type CellStyle = { size: number; bold?: boolean; white?: boolean; wrap?: boolean; align?: "left" | "center" | "right" };
+/** Draws one cell with its text vertically centred; only wrapping columns break lines. */
+function cell(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, style: CellStyle) {
+  if (style.white) doc.rect(x, y, w, h).fill("#fff");
+  doc.strokeColor("#b8c4d0").lineWidth(style.white ? 1 : .5).rect(x, y, w, h).stroke();
+  if (!text) return;
+  const inner = w - 4;
+  doc.fillColor("#142033").font(style.bold ? "Helvetica-Bold" : "Helvetica").fontSize(style.size);
+  const height = style.wrap ? (doc.heightOfString(text, { width: inner }) as number) : (doc.currentLineHeight() as number);
+  doc.text(text, x + 2, y + Math.max(1.5, (h - height) / 2), { width: inner, align: style.align ?? "left", lineBreak: style.wrap ?? false, ellipsis: false });
+}
+function briefBand(doc: PDFKit.PDFDocument, _building: PacketBuilding, g: ReturnType<typeof geometry>) {
+  const x = g.margin; const top = 42; const w = g.width - x * 2; const half = w / 2;
+  const line = 8.6; const codeW = 17;
+  const column = (label: string, entries: string[][], cx: number) => {
+    doc.font("Helvetica-Bold").fontSize(g.font.head).fillColor("#0a5f5b").text(label, cx, top, { width: half - 8 });
+    entries.forEach(([code, gloss], index) => {
+      const y = top + 11 + index * line;
+      doc.font("Helvetica-Bold").fontSize(7).fillColor("#101828").text(code, cx, y, { width: codeW, lineBreak: false });
+      doc.font("Helvetica").fontSize(7).fillColor("#33415a").text(gloss, cx + codeW + 3, y, { width: half - codeW - 12, lineBreak: false });
+    });
+  };
+  column("CONDITION — WRITE ONE CODE IN THE CELL", conditionKey, x);
+  column("LABELING — WRITE ONE CODE IN THE CELL", labelKey, x + half);
+  doc.font("Helvetica").fontSize(6.5).fillColor("#546273").text("Any code other than OK requires a note. A blank cell is recorded as not inspected, not as good.", x, top + 11 + Math.max(conditionKey.length, labelKey.length) * line + 3, { width: w });
+}
 
-export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> { const g = geometry(options); const pages = layoutRows(building.inventoryItems, options); const total = packetPageCount(building.inventoryItems, options, building.floorPlans.length); const doc: PDFKit.PDFDocument = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } }); const chunks: Buffer[] = []; doc.on("data", (chunk: Uint8Array) => chunks.push(Buffer.from(chunk))); const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
-  pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? 37 + g.band : 37; const headers = ["COND.", "LABEL", "ITEM #", "SAMPLE #", "LOCATION DESCRIPTION", "MATERIAL IDENTIFICATION", "EST. QUANTITY", "FIELD NOTES · CORRECTIONS"]; let x = g.margin; headers.forEach((title, col) => { doc.rect(x, y, g.cols[col], 14).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(5.7).text(title, x + 2, y + 4, { width: g.cols[col] - 4 }); x += g.cols[col]; }); y += 14; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, g.cols.reduce((a, b) => a + b, 0), 12).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(7).text(row.group, g.margin + 3, y + 3); y += 12; lastGroup = row.group; } let cx = g.margin; const location = [row.item.room, row.item.specificLocation].filter(Boolean).join(" · "); const data = ["", "", row.item.inventoryCode, row.sample, location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit), ""]; data.forEach((value, col) => { cell(doc, value, cx, y, g.cols[col], row.height, col === 2, col < 2); cx += g.cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + g.cols[0] + g.cols[1] + g.cols[2] + g.cols[3], y + row.height / 2).lineTo(g.margin + g.cols.reduce((a, b) => a + b, 0), y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); });
+export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> { const g = geometry(options); const { cols, pages } = packetLayout(building.inventoryItems, options); const tableWidth = cols.reduce((sum, width) => sum + width, 0); const total = pages.length + (options.includeFloorPlans === false ? 0 : building.floorPlans.length); const doc: PDFKit.PDFDocument = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } }); const chunks: Buffer[] = []; doc.on("data", (chunk: Uint8Array) => chunks.push(Buffer.from(chunk))); const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+  pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? TABLE_TOP + g.band : TABLE_TOP; let x = g.margin; COLUMN_HEADERS.forEach((title, col) => { doc.rect(x, y, cols[col], COL_HEADER).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(g.font.head); const labelHeight = doc.heightOfString(title, { width: cols[col] - 4 }) as number; doc.text(title, x + 2, y + Math.max(1.5, (COL_HEADER - labelHeight) / 2), { width: cols[col] - 4, align: "center", lineBreak: false }); x += cols[col]; }); y += COL_HEADER; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, tableWidth, GROUP_HEADER).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(g.font.group); doc.text(row.group, g.margin + 3, y + Math.max(1.5, (GROUP_HEADER - (doc.currentLineHeight() as number)) / 2), { width: tableWidth - 6, lineBreak: false }); y += GROUP_HEADER; lastGroup = row.group; } let cx = g.margin; const location = [row.item.room, row.item.specificLocation].filter(Boolean).join(" · "); const data = ["", "", row.item.inventoryCode, row.sample, location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit), ""]; data.forEach((value, col) => { cell(doc, value, cx, y, cols[col], row.height, { size: g.font.body, bold: col === 2, white: col < 2, wrap: col === LOCATION_COL, align: col <= 3 ? "center" : "left" }); cx += cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + cols[0] + cols[1] + cols[2] + cols[3], y + row.height / 2).lineTo(g.margin + tableWidth, y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); });
   if (options.includeFloorPlans !== false) for (const [planIndex, plan] of building.floorPlans.entries()) { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 1 + planIndex, total); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(12).text(`FLOOR PLAN · ${plan.name}`, 22, 50); const x = 22, y = 70, w = g.width - 44, h = g.height - 112; doc.strokeColor("#9ba8b8").rect(x, y, w, h).stroke(); const raster = /png|jpe?g/.test(plan.mimeType); const object = raster && canReadStorageKey(building.organizationId, plan.storageKey) ? await getStoredObject(plan.storageKey) : null; if (object) { try { doc.image(Buffer.from(await object.arrayBuffer()), x + 8, y + 8, { fit: [w - 16, h - 16], align: "center", valign: "center" }); } catch { doc.font("Helvetica").fontSize(9).fillColor("#b42318").text("Drawing could not be embedded.", x + 16, y + 16); } } else { doc.font("Helvetica").fontSize(10).fillColor("#6a7586").text("No drawing on file - use this ruled grid for field annotations.", x + 16, y + 16); for (let gx = x; gx < x + w; gx += 24) doc.moveTo(gx, y).lineTo(gx, y + h).strokeColor("#e2e8f0").stroke(); for (let gy = y; gy < y + h; gy += 24) doc.moveTo(x, gy).lineTo(x + w, gy).strokeColor("#e2e8f0").stroke(); } }
   doc.end(); return done; }

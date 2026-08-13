@@ -97,15 +97,21 @@ export function SubmitInspectionForm({ inspectionId }: { inspectionId: string })
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [pending, start] = useTransition();
+  const [message, setMessage] = useState("");
   return (
     <form
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
         start(async () => {
-          await submitInspection(inspectionId, name, notes);
-          router.push(`/inspections/${inspectionId}`);
-          router.refresh();
+          setMessage("");
+          try {
+            await submitInspection(inspectionId, name, notes);
+            router.push(`/inspections/${inspectionId}`);
+            router.refresh();
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Could not submit the inspection.");
+          }
         });
       }}
     >
@@ -120,6 +126,7 @@ export function SubmitInspectionForm({ inspectionId }: { inspectionId: string })
       <button className="btn btn-primary w-full" disabled={pending || !name}>
         {pending ? "Submitting…" : "Sign and submit inspection"}
       </button>
+      {message && <div role="alert" className="rounded-lg bg-[#fff0ed] px-3 py-2 text-sm font-medium text-[#a23725]">{message}</div>}
     </form>
   );
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertBuildingAccess, getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { buildInspectionPacket } from "@/lib/packet-pdf";
+import { makeFloorResolver } from "@/lib/floor-order";
 
 export const dynamic = "force-dynamic";
 
@@ -28,12 +29,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const chunk = <T,>(values: T[], size = 50) => values.reduce<T[][]>((groups, value, index) => { if (index % size === 0) groups.push([]); groups.at(-1)?.push(value); return groups; }, []);
   const itemIds = building.inventoryItems.map((item) => item.id);
   const functionalAreaIds = [...new Set(building.inventoryItems.map((item) => item.functionalAreaId).filter(Boolean))] as string[];
-  const [functionalAreas, sampleLinks, inspectionItems] = await Promise.all([
+  const [buildingFloors, functionalAreas, sampleLinks, inspectionItems] = await Promise.all([
+    db.buildingFloor.findMany({ where: { buildingId: building.id }, select: { id: true, name: true, level: true } }),
     Promise.all(chunk(functionalAreaIds).map((ids) => db.buildingArea.findMany({ where: { id: { in: ids } } }))).then((groups) => groups.flat()),
     Promise.all(chunk(itemIds).map((ids) => db.sampleInventoryLink.findMany({ where: { inventoryItemId: { in: ids } }, include: { sample: { select: { sampleNumber: true } } } }))).then((groups) => groups.flat()),
     Promise.all(chunk(itemIds).map((ids) => db.inspectionItem.findMany({ where: { inventoryItemId: { in: ids }, inspection: { status: "completed" } }, include: { inspection: { select: { completedAt: true } } }, orderBy: { inspectedAt: "desc" } }))).then((groups) => groups.flat()),
   ]);
   const areasById = new Map(functionalAreas.map((area) => [area.id, area]));
+  const resolveFloor = makeFloorResolver(buildingFloors);
   const samplesByItemId = new Map<string, typeof sampleLinks>();
   sampleLinks.forEach((link) => samplesByItemId.set(link.inventoryItemId, [...(samplesByItemId.get(link.inventoryItemId) || []), link]));
   const previousByItemId = new Map<string, typeof inspectionItems[number]>();
@@ -54,13 +57,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     facility: { name: building.facility.name, facilityId: building.facility.facilityId },
     organizationName: org?.name || user.organizationName,
     organizationAddress: org?.address ?? null,
-    inventoryItems: building.inventoryItems.map((item) => ({ ...item, functionalArea: item.functionalAreaId ? areasById.get(item.functionalAreaId) || null : null, sampleLinks: samplesByItemId.get(item.id) || [], inspectionItems: previousByItemId.has(item.id) ? [previousByItemId.get(item.id)!] : [] })),
+    inventoryItems: building.inventoryItems.map((item) => { const area = item.functionalAreaId ? areasById.get(item.functionalAreaId) || null : null; return { ...item, functionalArea: area, ...resolveFloor({ floor: item.floor, floorId: area?.floorId ?? null }), sampleLinks: samplesByItemId.get(item.id) || [], inspectionItems: previousByItemId.has(item.id) ? [previousByItemId.get(item.id)!] : [] }; }),
     floorPlans: building.floorPlans.map((fp) => ({
       name: fp.name,
       storageKey: fp.storageKey,
       mimeType: fp.mimeType,
     })),
-  }, { paper: (query.get("paper") as "letter" | "legal" | "a4" | "a3" | null) ?? "letter", orientation: (query.get("orientation") as "portrait" | "landscape" | null) ?? "portrait", density: (query.get("density") as "standard" | "compact" | null) ?? "standard", nestLayers: query.get("nestLayers") !== "false", groupRepeated: false, includeFloorPlans: (query.get("includeFloorPlans") ?? query.get("plans")) === "true", includeRemoved: (query.get("includeRemoved") ?? query.get("removed")) === "true", floor: query.get("floor") || undefined, functionalAreaId: query.get("functionalAreaId") || undefined });
+  }, { paper: (query.get("paper") as "letter" | "legal" | "a4" | "a3" | null) ?? "letter", orientation: (query.get("orientation") as "portrait" | "landscape" | null) ?? "portrait", density: (query.get("density") as "standard" | "compact" | null) ?? "standard", nestLayers: query.get("nestLayers") !== "false", groupRepeated: false, includeFloorPlans: (query.get("includeFloorPlans") ?? query.get("plans")) === "true", includeRemoved: (query.get("includeRemoved") ?? query.get("removed")) === "true", floor: query.get("floor") || undefined, functionalAreaId: query.get("functionalAreaId") || undefined, floorOrder: query.get("floorOrder") === "descending" ? "descending" : "ascending" });
 
   const filename = `${building.name.replace(/[\\/:*?"<>|]/g, "-")} Inspection Packet.pdf`;
   const bytes = new Uint8Array(pdf);

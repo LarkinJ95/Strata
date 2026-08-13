@@ -27,6 +27,7 @@ type FieldItemRow = {
   materialRemoved: boolean | number;
   removedQuantity: number | null;
   inspected: boolean | number;
+  sampleCollected: boolean | number;
   photo: string | null;
 };
 
@@ -58,6 +59,13 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
       ii."materialRemoved" AS "materialRemoved",
       ii."removedQuantity" AS "removedQuantity",
       ii."inspected" AS "inspected",
+      EXISTS (
+        SELECT 1
+        FROM "SampleInventoryLink" sampleLink
+        INNER JOIN "Sample" sample ON sample."id" = sampleLink."sampleId"
+        WHERE sampleLink."inventoryItemId" = inv."id"
+          AND sample."collectionDate" >= ${insp.startedAt ?? insp.createdAt}
+      ) AS "sampleCollected",
       inv."inventoryCode" AS "code",
       inv."materialDescription" AS "material",
       inv."floor" AS "floor",
@@ -92,7 +100,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         client: insp.building.client.name,
       }}
       completion={insp.completionPct}
-      items={items.map((item) => ({ ...item, materialRemoved: Boolean(item.materialRemoved), inspected: Boolean(item.inspected) }))}
+      items={items.map((item) => ({ ...item, materialRemoved: Boolean(item.materialRemoved), inspected: Boolean(item.inspected), sampleCollected: Boolean(item.sampleCollected) }))}
     />
   );
 }
