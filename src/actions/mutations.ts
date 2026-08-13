@@ -242,9 +242,20 @@ export async function saveHistoricalInspection(input: { buildingId: string; insp
   for (const entry of filled) {
     const inv = await db.inventoryItem.findFirst({ where: { id: entry.inventoryItemId, buildingId: building.id } });
     if (!inv) continue;
-    const previous = await db.inventoryConditionHistory.findFirst({ where: { inventoryItemId: inv.id, changedAt: { lte: input.performedAt } }, orderBy: { changedAt: "desc" } });
-    await db.inspectionItem.create({ data: { inspectionId: inspection.id, inventoryItemId: inv.id, previousCondition: previous?.newCondition, currentCondition: entry.currentCondition, currentLabel: entry.currentLabel, quantityObserved: entry.quantityObserved, materialRemoved: entry.materialRemoved ?? false, removedQuantity: entry.removedQuantity, notes: entry.notes, inspected: Boolean(entry.currentCondition), inspectedAt: input.performedAt } });
-    if (entry.currentCondition) { await db.inventoryConditionHistory.create({ data: { inventoryItemId: inv.id, previousCondition: previous?.newCondition, newCondition: entry.currentCondition, inspectionId: inspection.id, inspectorId: user.id, notes: entry.notes, changedAt: input.performedAt } }); const newer = await db.inspectionItem.findFirst({ where: { inventoryItemId: inv.id, inspected: true, inspection: { status: "completed", completedAt: { gt: input.performedAt } } } }); if (!newer && input.status === "completed") { await db.inventoryItem.update({ where: { id: inv.id }, data: { condition: entry.currentCondition, recordStatus: entry.currentCondition === "removed" ? "removed" : inv.recordStatus } }); applied++; } }
+    const [previousCondition, previousLabel] = await Promise.all([
+      db.inventoryConditionHistory.findFirst({ where: { inventoryItemId: inv.id, changedAt: { lte: input.performedAt } }, orderBy: { changedAt: "desc" } }),
+      db.inventoryLabelHistory.findFirst({ where: { inventoryItemId: inv.id, changedAt: { lte: input.performedAt } }, orderBy: { changedAt: "desc" } }),
+    ]);
+    await db.inspectionItem.create({ data: { inspectionId: inspection.id, inventoryItemId: inv.id, previousCondition: previousCondition?.newCondition, currentCondition: entry.currentCondition, previousLabel: previousLabel?.labelCondition, currentLabel: entry.currentLabel, quantityObserved: entry.quantityObserved, materialRemoved: entry.materialRemoved ?? false, removedQuantity: entry.removedQuantity, notes: entry.notes, inspected: Boolean(entry.currentCondition), inspectedAt: input.performedAt } });
+    if (entry.currentCondition) await db.inventoryConditionHistory.create({ data: { inventoryItemId: inv.id, previousCondition: previousCondition?.newCondition, newCondition: entry.currentCondition, inspectionId: inspection.id, inspectorId: user.id, notes: entry.notes, changedAt: input.performedAt } });
+    if (entry.currentLabel) await db.inventoryLabelHistory.create({ data: { inventoryItemId: inv.id, labelPresent: entry.currentLabel !== "missing", labelCondition: entry.currentLabel, labelReplaced: entry.currentLabel === "replaced", labelMissing: entry.currentLabel === "missing", unableToReplace: entry.currentLabel === "unable_to_replace", inspectionId: inspection.id, changedById: user.id, notes: entry.notes, changedAt: input.performedAt } });
+    if (entry.currentCondition || entry.currentLabel) {
+      const newer = await db.inspectionItem.findFirst({ where: { inventoryItemId: inv.id, inspected: true, inspection: { status: "completed", completedAt: { gt: input.performedAt } } } });
+      if (!newer && input.status === "completed") {
+        await db.inventoryItem.update({ where: { id: inv.id }, data: { condition: entry.currentCondition ?? inv.condition, labelCondition: entry.currentLabel ?? inv.labelCondition, labelPresent: entry.currentLabel ? entry.currentLabel !== "missing" : inv.labelPresent, recordStatus: entry.currentCondition === "removed" ? "removed" : inv.recordStatus } });
+        applied++;
+      }
+    }
   }
   if (input.status === "completed" && (!building.lastInspectionAt || input.performedAt > building.lastInspectionAt)) await db.building.update({ where: { id: building.id }, data: { lastInspectionAt: input.performedAt, nextInspectionAt: new Date(input.performedAt.getTime() + building.inspectionIntervalDays * 86400000) } });
   if (input.status === "completed") await db.signature.create({ data: { organizationId: user.organizationId, inspectionId: inspection.id, userId: user.id, signerName: input.inspectorName, signatureData: input.inspectorName, meaning: "Historical entry", signedAt: input.performedAt } });
