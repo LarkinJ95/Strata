@@ -60,7 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       storageKey: fp.storageKey,
       mimeType: fp.mimeType,
     })),
-  }, { paper: (query.get("paper") as "letter" | "legal" | "a4" | "a3" | null) ?? "letter", orientation: (query.get("orientation") as "portrait" | "landscape" | null) ?? "portrait", density: (query.get("density") as "standard" | "compact" | null) ?? "standard", nestLayers: query.get("nestLayers") !== "false", groupRepeated: query.get("groupRepeated") !== "false", includeFloorPlans: query.get("plans") !== "false", includeRemoved: query.get("removed") === "true", floor: query.get("floor") || undefined, functionalAreaId: query.get("functionalAreaId") || undefined });
+  }, { paper: (query.get("paper") as "letter" | "legal" | "a4" | "a3" | null) ?? "letter", orientation: (query.get("orientation") as "portrait" | "landscape" | null) ?? "portrait", density: (query.get("density") as "standard" | "compact" | null) ?? "standard", nestLayers: query.get("nestLayers") !== "false", groupRepeated: query.get("groupRepeated") !== "false", includeFloorPlans: (query.get("includeFloorPlans") ?? query.get("plans")) === "true", includeRemoved: (query.get("includeRemoved") ?? query.get("removed")) === "true", floor: query.get("floor") || undefined, functionalAreaId: query.get("functionalAreaId") || undefined });
 
   const filename = `${building.name.replace(/[\\/:*?"<>|]/g, "-")} Inspection Packet.pdf`;
   const bytes = new Uint8Array(pdf);

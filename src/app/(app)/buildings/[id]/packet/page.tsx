@@ -20,7 +20,7 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
     },
   });
   if (!b || !assertBuildingAccess(user, b)) notFound();
-  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: sp.groupRepeated !== "false", includeFloorPlans: sp.plans !== "false", includeRemoved: sp.removed === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined };
+  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: sp.groupRepeated !== "false", includeFloorPlans: (sp.includeFloorPlans ?? sp.plans) === "true", includeRemoved: (sp.includeRemoved ?? sp.removed) === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined };
   const pages = packetPageCount(b.inventoryItems, options, b.floorPlans.length);
   const floors = [...new Set(b.inventoryItems.map((item) => item.floor).filter(Boolean))] as string[];
   const functionalAreas = [...new Map(b.inventoryItems.flatMap((item) => item.functionalArea ? [[item.functionalArea.id, item.functionalArea]] : [])).values()];
