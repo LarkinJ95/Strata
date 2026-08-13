@@ -2,6 +2,7 @@
 // Node's filesystem, which makes it safe in the Cloudflare Worker runtime.
 // @ts-expect-error PDFKit does not publish types for its standalone entrypoint.
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
+import { PDFDocument as PDFLibDocument } from "pdf-lib";
 import { CONDITION_LABELS, formatQty } from "@/lib/utils";
 import { canReadStorageKey, getStoredObject } from "@/lib/storage";
 import { UNASSIGNED_LABEL, UNASSIGNED_LEVEL } from "@/lib/floor-order";
@@ -145,8 +146,62 @@ function fieldNotesPage(doc: PDFKit.PDFDocument, building: PacketBuilding, g: Re
   for (let row = 0; row < rowCount; row++) { let cellX = x; for (const width of cols) { doc.rect(cellX, top + headHeight + row * rowHeight, width, rowHeight).strokeColor("#b8c4d0").lineWidth(.5).stroke(); cellX += width; } }
 }
 
-export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> { const g = geometry(options); const { cols, pages } = packetLayout(building.inventoryItems, options); const tableWidth = cols.reduce((sum, width) => sum + width, 0); const planCount = options.includeFloorPlans === false ? 0 : building.floorPlans.length; const total = pages.length + planCount + 1; const doc: PDFKit.PDFDocument = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } }); const chunks: Buffer[] = []; doc.on("data", (chunk: Uint8Array) => chunks.push(Buffer.from(chunk))); const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+export async function buildInspectionPacket(building: PacketBuilding, options: PacketOptions = {}): Promise<Buffer> {
+  const g = geometry(options);
+  const { cols, pages } = packetLayout(building.inventoryItems, options);
+  const tableWidth = cols.reduce((sum, width) => sum + width, 0);
+  const planAssets: Array<
+    | { kind: "pdf"; document: PDFLibDocument }
+    | { kind: "png" | "jpg"; bytes: Uint8Array }
+  > = [];
+
+  if (options.includeFloorPlans !== false) {
+    for (const plan of building.floorPlans) {
+      if (!canReadStorageKey(building.organizationId, plan.storageKey)) continue;
+      const object = await getStoredObject(plan.storageKey);
+      if (!object) continue;
+      const bytes = new Uint8Array(await object.arrayBuffer());
+      const key = `${plan.mimeType} ${plan.storageKey}`.toLowerCase();
+      try {
+        if (key.includes("pdf") || key.endsWith(".pdf")) {
+          planAssets.push({ kind: "pdf", document: await PDFLibDocument.load(bytes) });
+        } else if (key.includes("png") || key.endsWith(".png")) {
+          planAssets.push({ kind: "png", bytes });
+        } else if (/jpe?g/.test(key)) {
+          planAssets.push({ kind: "jpg", bytes });
+        }
+      } catch (error) {
+        console.error("Floor plan could not be loaded into inspection packet", { plan: plan.name, error });
+      }
+    }
+  }
+
+  const planPageCount = planAssets.reduce((sum, asset) => sum + (asset.kind === "pdf" ? asset.document.getPageCount() : 1), 0);
+  const total = pages.length + planPageCount + 1;
+  const doc: PDFKit.PDFDocument = new PDFDocument({ size: [g.width, g.height], margin: 0, info: { Title: `${building.buildingNumber} Inspection Packet`, Author: building.organizationName } });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Uint8Array) => chunks.push(Buffer.from(chunk)));
+  const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
   pages.forEach((page, index) => { if (index) doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, index + 1, total); if (page.first) briefBand(doc, building, g); let y = page.first ? TABLE_TOP + g.band : TABLE_TOP; let x = g.margin; COLUMN_HEADERS.forEach((title, col) => { doc.rect(x, y, cols[col], COL_HEADER).fill("#33415a"); doc.fillColor("white").font("Helvetica-Bold").fontSize(g.font.head); const labelHeight = doc.heightOfString(title, { width: cols[col] - 4 }) as number; doc.text(title, x + 2, y + Math.max(1.5, (COL_HEADER - labelHeight) / 2), { width: cols[col] - 4, align: "center", lineBreak: false }); x += cols[col]; }); y += COL_HEADER; let lastGroup = ""; page.rows.forEach((row) => { if (row.group !== lastGroup) { doc.rect(g.margin, y, tableWidth, GROUP_HEADER).fill("#e4e9ef"); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(g.font.group); doc.text(row.group, g.margin + 3, y + Math.max(1.5, (GROUP_HEADER - (doc.currentLineHeight() as number)) / 2), { width: tableWidth - 6, lineBreak: false }); y += GROUP_HEADER; lastGroup = row.group; } let cx = g.margin; const data = ["", "", row.item.inventoryCode, row.sample, row.location, `${row.item.materialDescription}${row.layer ? " (layer)" : ""}`, row.layer ? "-" : formatQty(row.item.currentQuantity, row.item.quantityUnit)]; data.forEach((value, col) => { cell(doc, value, cx, y, cols[col], row.height, { size: g.font.body, bold: col === 2, white: col < 2, wrap: col === LOCATION_COL || col === MATERIAL_COL, align: col <= 3 ? "center" : "left" }); cx += cols[col]; }); if (row.item.recordStatus === "removed") doc.moveTo(g.margin + cols[0] + cols[1] + cols[2] + cols[3], y + row.height / 2).lineTo(g.margin + tableWidth, y + row.height / 2).strokeColor("#8a94a3").stroke(); y += row.height; }); });
   fieldNotesPage(doc, building, g, pages.length + 1, total);
-  if (options.includeFloorPlans !== false) for (const [planIndex, plan] of building.floorPlans.entries()) { doc.addPage({ size: [g.width, g.height], margin: 0 }); header(doc, building, pages.length + 2 + planIndex, total); doc.fillColor("#142033").font("Helvetica-Bold").fontSize(12).text(`FLOOR PLAN · ${plan.name}`, 22, 60); const x = 22, y = 80, w = g.width - 44, h = g.height - 122; doc.strokeColor("#9ba8b8").rect(x, y, w, h).stroke(); const raster = /png|jpe?g/.test(plan.mimeType); const object = raster && canReadStorageKey(building.organizationId, plan.storageKey) ? await getStoredObject(plan.storageKey) : null; if (object) { try { doc.image(Buffer.from(await object.arrayBuffer()), x + 8, y + 8, { fit: [w - 16, h - 16], align: "center", valign: "center" }); } catch { doc.font("Helvetica").fontSize(9).fillColor("#b42318").text("Drawing could not be embedded.", x + 16, y + 16); } } else { doc.font("Helvetica").fontSize(10).fillColor("#6a7586").text("No drawing on file - use this ruled grid for field annotations.", x + 16, y + 16); for (let gx = x; gx < x + w; gx += 24) doc.moveTo(gx, y).lineTo(gx, y + h).strokeColor("#e2e8f0").stroke(); for (let gy = y; gy < y + h; gy += 24) doc.moveTo(x, gy).lineTo(x + w, gy).strokeColor("#e2e8f0").stroke(); } }
-  doc.end(); return done; }
+  doc.end();
+  const packet = await done;
+  if (!planAssets.length) return packet;
+
+  const merged = await PDFLibDocument.load(new Uint8Array(packet));
+  for (const asset of planAssets) {
+    if (asset.kind === "pdf") {
+      const copiedPages = await merged.copyPages(asset.document, asset.document.getPageIndices());
+      copiedPages.forEach((page) => merged.addPage(page));
+      continue;
+    }
+    const page = merged.addPage([g.width, g.height]);
+    const image = asset.kind === "png" ? await merged.embedPng(asset.bytes) : await merged.embedJpg(asset.bytes);
+    const margin = 12;
+    const scale = Math.min((g.width - margin * 2) / image.width, (g.height - margin * 2) / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    page.drawImage(image, { x: (g.width - width) / 2, y: (g.height - height) / 2, width, height });
+  }
+  return Buffer.from(await merged.save());
+}
