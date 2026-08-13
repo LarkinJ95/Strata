@@ -15,7 +15,7 @@
     "db:bootstrap:production": "tsx scripts/bootstrap-production.ts",
     "db:import:production-workbook": "tsx scripts/import-production-workbook.ts",
     "start": "next start -H 0.0.0.0 -p 3000",
-    "lint": "next lint",
+    "lint": "eslint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
@@ -43,6 +43,7 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.2.1",
     "@types/pdfkit": "^0.17.6",
@@ -50,6 +51,8 @@
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
     "autoprefixer": "^10.4.21",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.23",
     "postcss": "^8.5.6",
     "prisma": "^6.13.0",
     "tailwindcss": "^3.4.17",

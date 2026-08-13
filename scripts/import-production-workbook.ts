@@ -123,7 +123,7 @@ async function main() {
     const buildingId = id(); buildingIds.set(buildingNumber, buildingId);
     statements.push(`INSERT INTO "Building" ("id","organizationId","clientId","facilityId","name","buildingNumber","address","yearConstructed","squareFootage","floorsCount","buildingUse","occupancyStatus","photoPolicy","surveyStatus","managementPlanStatus","inspectionIntervalDays","notes","updatedAt") VALUES (${[buildingId, organizationId, expectedClientId, expectedFacilityId, requireField(row, "name", "Building name"), buildingNumber, optional(row.address), number(row.year_constructed), number(row.square_footage), number(row.floors_count), optional(row.building_use), text(row.occupancy_status) || "occupied", text(row.photo_policy) || "permitted", text(row.survey_status) || "complete", text(row.management_plan_status) || "current", number(row.inspection_interval_days) ?? 365, optional(row.notes)].map(quote).join(",")},CURRENT_TIMESTAMP);`);
   }
-  let insertedClients = clients.length - existingClients.length;
+  const insertedClients = clients.length - existingClients.length;
   let insertedFacilities = 0, insertedBuildings = 0, insertedFloors = 0, insertedInventory = 0;
   for (const row of facilities) if (!existingFacilitiesByCode.has(text(row.facility_id).toLowerCase())) insertedFacilities += 1;
   for (const row of buildings) if (!existingBuildingsByNumber.has(text(row.building_number))) insertedBuildings += 1;

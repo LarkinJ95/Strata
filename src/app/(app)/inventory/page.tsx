@@ -17,6 +17,7 @@ export default async function InventoryPage({
   const sp = await searchParams;
   const where: Record<string, unknown> = { ...dataScope(user) };
   if (sp.building) where.buildingId = sp.building;
+  if (sp.functionalArea) where.functionalAreaId = sp.functionalArea;
   if (sp.acm) where.acmClassification = sp.acm.includes(",") ? { in: sp.acm.split(",") } : sp.acm;
   if (sp.condition) where.condition = sp.condition.includes(",") ? { in: sp.condition.split(",") } : sp.condition;
   if (sp.q) {

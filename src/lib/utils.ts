@@ -175,6 +175,26 @@ export function conditionTone(c: string) {
   return "muted";
 }
 
+/** Severity ranking so summaries can report the worst condition rather than the first one. */
+export const CONDITION_SEVERITY: Record<string, number> = {
+  significantly_damaged: 6,
+  damaged: 5,
+  needs_repair: 4,
+  inaccessible: 3,
+  unable_to_inspect: 3,
+  fair: 2,
+  good: 1,
+  removed: 0,
+};
+
+export function worstCondition(conditions: string[]): string | null {
+  let worst: string | null = null;
+  for (const condition of conditions) {
+    if (worst === null || (CONDITION_SEVERITY[condition] ?? 0) > (CONDITION_SEVERITY[worst] ?? 0)) worst = condition;
+  }
+  return worst;
+}
+
 /** A consistent, explainable triage score for inventory views and summaries. */
 export function riskScore(item: {
   acmClassification: string;

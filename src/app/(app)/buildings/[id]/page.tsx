@@ -17,10 +17,10 @@ import {
 import { can, getSession, assertBuildingAccess } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { evaluateBuilding } from "@/lib/compliance";
-import { AcmChip, Chip, ConditionChip, Panel } from "@/components/ui/primitives";
+import { AcmChip, Chip, ConditionChip, Empty, Panel } from "@/components/ui/primitives";
 import { ActivityList, InventoryTable, PhotoThumb } from "@/components/records";
 import { fileUrl } from "@/lib/files";
-import { formatDate, formatNumber, parseJson, photoPolicyMessage } from "@/lib/utils";
+import { CONDITION_SEVERITY, conditionTone, formatDate, formatNumber, parseJson, photoPolicyMessage, worstCondition } from "@/lib/utils";
 import { StartInspectionButton } from "@/components/forms/actions-ui";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { DocumentUpload } from "@/components/forms/document-upload";
@@ -50,7 +50,7 @@ const TABS = [
   { id: "inventory", label: "Inventory", icon: PackageSearch },
   { id: "samples", label: "Samples", icon: Beaker },
   { id: "paint", label: "Paint", icon: Paintbrush },
-  { id: "spaces", label: "Floors / FA", icon: Building2 },
+  { id: "spaces", label: "Spaces", icon: Building2 },
   { id: "ppe", label: "PPE", icon: Shield },
   { id: "repairs", label: "Repairs", icon: Wrench },
   { id: "inspections", label: "Inspections", icon: ClipboardCheck },
@@ -367,54 +367,108 @@ export default async function BuildingPage({
           </div>
         )}
 
-        {tab === "spaces" && (
-          <div className="space-y-4">
+        {tab === "spaces" && (() => {
+          // Summarise once so the pills, the header line, and each card read from the same numbers.
+          const summary = new Map(building.areas.map((area) => {
+            const areaItems = items.filter((item) => item.functionalAreaId === area.id);
+            return [area.id, {
+              total: areaItems.length,
+              acm: areaItems.filter((item) => ["confirmed_acm", "assumed_acm", "pacm"].includes(item.acmClassification)).length,
+              worst: worstCondition(areaItems.map((item) => item.condition)),
+            }];
+          }));
+          const visibleSummaries = visibleAreas.map((area) => summary.get(area.id)!);
+          const attention = visibleSummaries.filter((s) => s.worst && (CONDITION_SEVERITY[s.worst] ?? 0) >= 4).length;
+          const materialCount = visibleSummaries.reduce((sum, s) => sum + s.total, 0);
+          const acmCount = visibleSummaries.reduce((sum, s) => sum + s.acm, 0);
+          const pill = (active: boolean) => cn("rounded-full px-3 py-1.5 text-xs font-semibold transition", active ? "bg-[#0f2748] text-white" : "bg-[rgba(16,36,72,0.055)] text-ink-2 hover:bg-[rgba(16,36,72,0.09)]");
+          return (
             <div>
-              <div className="font-display font-semibold">Floors &amp; functional areas</div>
-              <p className="mt-1 text-sm text-ink-3">Choose a floor to focus on its assigned functional areas, or use All to review every area.</p>
-            </div>
-            <div className="flex gap-1 overflow-x-auto border-b border-[rgba(16,36,72,0.08)]" aria-label="Floor tabs">
-              <Link href={spacesHref()} className={cn("bldg-tab", activeFloorId === "all" && "active")}>All <span className="ml-1 text-xs text-ink-3">{building.areas.length}</span></Link>
-              {building.floors.map((floor) => (
-                <Link key={floor.id} href={spacesHref(floor.id)} className={cn("bldg-tab", activeFloorId === floor.id && "active")}>
-                  {floor.name} <span className="ml-1 text-xs text-ink-3">{floor.areas.length}</span>
-                </Link>
-              ))}
-            </div>
-            {activeFloor && (
-              <Panel className="p-4">
-                <div className="font-medium">{activeFloor.name} <span className="text-xs text-ink-3">level {activeFloor.level}</span></div>
-                <div className="text-xs text-ink-3">{activeFloor.occupancy || "—"} · {activeFloor.squareFootage ? `${activeFloor.squareFootage.toLocaleString()} SF` : "SF not set"}</div>
-                {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><FloorEditor buildingId={building.id} floor={activeFloor} /></div></details>}
-                {!user.isClient && <details className="mt-2"><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteFloor} className="mt-2"><AccessField /><input type="hidden" name="id" value={activeFloor.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form></details>}
-              </Panel>
-            )}
-            {!user.isClient && <details><summary className="btn btn-primary cursor-pointer text-xs">Add space</summary><div className="mt-3 flex flex-wrap gap-3"><FloorEditor buildingId={building.id} /><FunctionalAreaEditor buildingId={building.id} floors={building.floors} /></div></details>}
-            <div className="space-y-3">
-              <div className="font-display font-semibold">{activeFloor ? `${activeFloor.name} functional areas / rooms` : "All functional areas / rooms"}</div>
-              {visibleAreas.map((a) => { const areaItems = items.filter((item) => item.functionalAreaId === a.id); const damagedInArea = areaItems.filter((item) => ["damaged", "significantly_damaged", "needs_repair"].includes(item.condition)).length; return (
-                <Panel key={a.id} className="p-4">
-                  <div className="font-medium">{a.faCode ? `${a.faCode} · ` : ""}{a.name}</div>
-                  <div className="text-xs text-ink-3">{a.areaType?.replaceAll("_", " ")} · {building.floors.find((f) => f.id === a.floorId)?.name || "No floor"}</div>
-                  <div className="mt-2 text-xs text-ink-3">{areaItems.length} materials · {areaItems.filter((item) => ["confirmed_acm", "assumed_acm", "pacm"].includes(item.acmClassification)).length} ACM/PACM · worst: {damagedInArea ? "damaged" : areaItems.some((item) => item.condition === "fair") ? "fair" : areaItems[0]?.condition ?? "none"}</div>
-                  {a.useDescription && <div className="mt-1 text-sm text-ink-2">{a.useDescription}</div>}
-                  <div className="mt-3 border-t border-[rgba(16,36,72,0.08)] pt-3">
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3">Inventory in this FA</div>
-                    {areaItems.map((item) => (
-                      <Link key={item.id} href={`/inventory/${item.id}`} className="block rounded-lg px-2 py-1 text-sm hover:bg-paper-2">
-                        <span className="mono-id text-teal-dim">{item.inventoryCode}</span> · {item.materialDescription}
-                      </Link>
-                    ))}
-                    {!areaItems.length && <div className="text-xs text-ink-3">No inventory assigned to this functional area.</div>}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  <Link href={spacesHref()} className={pill(activeFloorId === "all")}>All <span className="ml-1 font-mono text-[10px] opacity-60">{building.areas.length}</span></Link>
+                  {building.floors.map((floor) => (
+                    <Link key={floor.id} href={spacesHref(floor.id)} className={pill(activeFloorId === floor.id)}>
+                      {floor.name} <span className="ml-1 font-mono text-[10px] opacity-60">{floor.areas.length}</span>
+                    </Link>
+                  ))}
+                </div>
+                {!user.isClient && (
+                  <details className="relative">
+                    <summary className="btn btn-primary cursor-pointer text-xs">Add space</summary>
+                    <div className="mt-3 flex flex-wrap gap-3"><FloorEditor buildingId={building.id} /><FunctionalAreaEditor buildingId={building.id} floors={building.floors} /></div>
+                  </details>
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-3">
+                <span><b className="text-ink">{visibleAreas.length}</b> functional area{visibleAreas.length === 1 ? "" : "s"}</span>
+                <span>·</span>
+                <span><b className="text-ink">{formatNumber(materialCount)}</b> materials</span>
+                <span>·</span>
+                <span><b className="text-ink">{formatNumber(acmCount)}</b> ACM/PACM</span>
+                {activeFloor && (
+                  <>
+                    <span>·</span>
+                    <span>level {activeFloor.level} · {activeFloor.occupancy || "occupancy not set"} · {activeFloor.squareFootage ? `${formatNumber(activeFloor.squareFootage)} SF` : "SF not set"}</span>
+                  </>
+                )}
+                {attention > 0 && <Chip tone="danger" className="ml-1">{attention} area{attention === 1 ? "" : "s"} need attention</Chip>}
+              </div>
+
+              {activeFloor && !user.isClient && (
+                <details className="mt-2">
+                  <summary className="w-fit cursor-pointer list-none text-xs font-semibold text-teal-dim [&::-webkit-details-marker]:hidden">Edit {activeFloor.name}</summary>
+                  <div className="mt-2 space-y-2">
+                    <FloorEditor buildingId={building.id} floor={activeFloor} />
+                    <form action={deleteFloor}><AccessField /><input type="hidden" name="id" value={activeFloor.id} /><ConfirmDeleteButton label="Delete floor" message="Delete this floor? Its functional areas will become unassigned." /></form>
                   </div>
-                  {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><FunctionalAreaEditor buildingId={building.id} floors={building.floors} area={a} /></div></details>}
-                  {!user.isClient && <details className="mt-2"><summary className="cursor-pointer text-xs text-ink-3">More</summary><form action={deleteFunctionalArea} className="mt-2"><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form></details>}
-                </Panel>
-              ); })}
-              {!visibleAreas.length && <p className="text-sm text-ink-3">No functional areas are assigned to {activeFloor ? activeFloor.name : "this building"}.</p>}
+                </details>
+              )}
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleAreas.map((a) => {
+                  const stat = summary.get(a.id)!;
+                  const tone = stat.worst ? conditionTone(stat.worst) : "muted";
+                  const rail = { danger: "#b42318", warn: "#d97706", fair: "#d9a441", ok: "#157347", removed: "#8a94a3", muted: "#c2c9d3" }[tone] ?? "#c2c9d3";
+                  return (
+                    <Panel key={a.id} className="relative overflow-hidden p-4">
+                      <span className="absolute inset-y-3 left-0 w-[3px] rounded-r" style={{ background: rail }} />
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          {a.faCode && <div className="mono-id text-[10px] font-semibold text-teal-dim">{a.faCode}</div>}
+                          <div className="font-medium leading-tight">{a.name}</div>
+                          <div className="mt-0.5 text-[11px] text-ink-3">{a.areaType?.replaceAll("_", " ") || "area"} · {building.floors.find((f) => f.id === a.floorId)?.name || "No floor"}</div>
+                        </div>
+                        {!user.isClient && (
+                          <details className="shrink-0">
+                            <summary className="cursor-pointer list-none px-1 leading-none text-ink-3 hover:text-ink [&::-webkit-details-marker]:hidden">⋯</summary>
+                            <div className="mt-2 space-y-2">
+                              <FunctionalAreaEditor buildingId={building.id} floors={building.floors} area={a} />
+                              <form action={deleteFunctionalArea}><AccessField /><input type="hidden" name="id" value={a.id} /><ConfirmDeleteButton label="Delete functional area" message="Delete this functional area? Inventory assigned to it will become unassigned." /></form>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                      {a.useDescription && <p className="mt-2 line-clamp-2 text-xs text-ink-2">{a.useDescription}</p>}
+                      <div className="mt-3 flex items-center gap-3 border-t border-[rgba(16,36,72,0.07)] pt-3">
+                        <div><div className="font-mono text-base font-semibold leading-none">{stat.total}</div><div className="mt-0.5 text-[10px] text-ink-3">materials</div></div>
+                        <span className="h-6 w-px bg-[rgba(16,36,72,0.1)]" />
+                        <div><div className="font-mono text-base font-semibold leading-none">{stat.acm}</div><div className="mt-0.5 text-[10px] text-ink-3">ACM/PACM</div></div>
+                        <span className="h-6 w-px bg-[rgba(16,36,72,0.1)]" />
+                        {stat.worst ? <ConditionChip value={stat.worst} /> : <Chip tone="muted">None</Chip>}
+                      </div>
+                      <Link href={stat.total ? `/inventory?building=${building.id}&functionalArea=${a.id}` : `/buildings/${building.id}?tab=inventory`} className="mt-2 inline-block text-xs font-semibold text-teal-dim hover:underline">
+                        {stat.total ? "View inventory →" : "Assign inventory →"}
+                      </Link>
+                    </Panel>
+                  );
+                })}
+              </div>
+              {!visibleAreas.length && <Empty title="No functional areas here" body={`Nothing is assigned to ${activeFloor ? activeFloor.name : "this building"} yet. Add a space to start mapping inventory to rooms.`} />}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {tab === "ppe" && (
           <div className="space-y-3">
