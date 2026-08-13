@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: "25mb",
+      // Strata is served through Cloudflare/OpenNext. Permit the public
+      // application host when Next compares the browser Origin to forwarded
+      // request headers for legacy and cached Server Action submissions.
+      allowedOrigins: ["strata.abateiq.com"],
     },
   },
   images: {
