@@ -31,7 +31,7 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
       <PageHeader
         kicker="Field packet"
         title={`${b.buildingNumber} inspection packet`}
-        description="A field checklist with a code key, write-in condition cells, field-notes lane, closeout, and optional real floor plans."
+        description="A compact field checklist with a code key, write-in condition cells, field-notes lane, and optional floor plans."
       />
       <Panel className="p-6">
         <div className="text-sm text-ink-2">
