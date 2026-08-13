@@ -22,7 +22,7 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
     },
   });
   if (!b || !assertBuildingAccess(user, b)) notFound();
-  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: false, includeFloorPlans: (sp.includeFloorPlans ?? sp.plans) === "true", includeRemoved: (sp.includeRemoved ?? sp.removed) === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined, floorOrder: (sp.floorOrder as PacketOptions["floorOrder"]) || "ascending" };
+  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: false, includeFloorPlans: (sp.includeFloorPlans ?? sp.plans) !== "false", includeRemoved: (sp.includeRemoved ?? sp.removed) === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined, floorOrder: (sp.floorOrder as PacketOptions["floorOrder"]) || "ascending" };
   // Resolve the same floor levels the PDF uses so the page estimate cannot diverge from it.
   const resolveFloor = makeFloorResolver(b.floors);
   const packetItems = b.inventoryItems.map((item) => ({ ...item, ...resolveFloor({ floor: item.floor, floorId: item.functionalArea?.floorId ?? null }) }));
