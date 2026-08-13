@@ -20,7 +20,7 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
     },
   });
   if (!b || !assertBuildingAccess(user, b)) notFound();
-  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: sp.groupRepeated !== "false", includeFloorPlans: (sp.includeFloorPlans ?? sp.plans) === "true", includeRemoved: (sp.includeRemoved ?? sp.removed) === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined };
+  const options: PacketOptions = { paper: (sp.paper as PacketOptions["paper"]) || "letter", orientation: (sp.orientation as PacketOptions["orientation"]) || "portrait", density: (sp.density as PacketOptions["density"]) || "standard", nestLayers: sp.nestLayers !== "false", groupRepeated: false, includeFloorPlans: (sp.includeFloorPlans ?? sp.plans) === "true", includeRemoved: (sp.includeRemoved ?? sp.removed) === "true", floor: sp.floor || undefined, functionalAreaId: sp.functionalAreaId || undefined };
   const pages = packetPageCount(b.inventoryItems, options, b.floorPlans.length);
   const floors = [...new Set(b.inventoryItems.map((item) => item.floor).filter(Boolean))] as string[];
   const functionalAreas = [...new Map(b.inventoryItems.flatMap((item) => item.functionalArea ? [[item.functionalArea.id, item.functionalArea]] : [])).values()];
@@ -43,7 +43,6 @@ export default async function PacketPage({ params, searchParams }: { params: Pro
           <label className="field"><span>Orientation</span><select name="orientation" defaultValue={options.orientation}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
           <label className="field"><span>Density</span><select name="density" defaultValue={options.density}><option value="standard">Standard</option><option value="compact">Compact</option></select></label>
           <label className="flex items-center gap-2 text-sm"><input type="hidden" name="nestLayers" value="false" /><input name="nestLayers" type="checkbox" value="true" defaultChecked={options.nestLayers} /> Nest layers</label>
-          <label className="flex items-center gap-2 text-sm"><input type="hidden" name="groupRepeated" value="false" /><input name="groupRepeated" type="checkbox" value="true" defaultChecked={options.groupRepeated} /> Group repeated materials</label>
           <label className="flex items-center gap-2 text-sm"><input type="hidden" name="plans" value="false" /><input name="plans" type="checkbox" value="true" defaultChecked={options.includeFloorPlans} /> Include floor plans</label>
           <label className="flex items-center gap-2 text-sm"><input type="hidden" name="removed" value="false" /><input name="removed" type="checkbox" value="true" defaultChecked={options.includeRemoved} /> Include removed items</label>
           <label className="field"><span>Scope to floor</span><select name="floor" defaultValue={options.floor || ""}><option value="">All floors</option>{floors.map((floor) => <option key={floor} value={floor}>{floor}</option>)}</select></label>
