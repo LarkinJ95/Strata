@@ -25,6 +25,19 @@ function str(form: FormData, key: string) {
   const v = form.get(key);
   return v == null ? "" : String(v).trim();
 }
+
+function inventoryItemNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  // Item numbers are the local sequence within a building.  Imported and
+  // historical records may carry a building prefix (for example
+  // EAST-2701-3); keep that prefix in internalCode and store only 03 here.
+  const suffix = trimmed.match(/(?:^|-)(\d+)$/)?.[1];
+  if (!suffix) throw new Error("Item # must be numeric, such as 01 or 115. Put a building-prefixed value in Internal inventory #.");
+  return suffix.length < 2 ? suffix.padStart(2, "0") : suffix;
+}
+
 function num(form: FormData, key: string) {
   const v = str(form, key);
   if (v === "") return null;
@@ -193,7 +206,7 @@ export async function saveInventory(form: FormData) {
   const buildingId = str(form, "buildingId");
   const qty = num(form, "currentQuantity");
   const patch = {
-    inventoryCode: str(form, "inventoryCode"),
+    inventoryCode: inventoryItemNumber(str(form, "inventoryCode")),
     internalCode: str(form, "internalCode") || null,
     materialDescription: str(form, "materialDescription"),
     materialCategory: str(form, "materialCategory") || "Miscellaneous",

@@ -271,7 +271,7 @@ export function InventoryEditor({
         {item && <input type="hidden" name="id" value={item.id} />}
         <input type="hidden" name="buildingId" value={buildingId} />
         <Grid>
-          {item && <Field label="Item #"><input name="inventoryCode" defaultValue={item.inventoryCode} required /></Field>}
+          {item && <Field label="Item #"><input name="inventoryCode" defaultValue={item.inventoryCode} required inputMode="numeric" pattern="[0-9]+" title="Use only the item sequence, such as 01 or 115" /><p className="-mt-2 text-xs text-ink-3">Use only the item sequence (for example, 01). Building-prefixed values belong in Internal inventory #.</p></Field>}
           <Field label="Internal inventory #"><input name="internalCode" defaultValue={item?.internalCode ?? ""} placeholder="Building #-Item #" /></Field>
           <Field label="Material"><input name="materialDescription" defaultValue={item?.materialDescription ?? ""} required /></Field>
           <Field label="Category">
