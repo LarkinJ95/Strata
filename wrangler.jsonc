@@ -2,6 +2,14 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "strata",
   "main": ".open-next/worker.js",
+  // `.open-next/` is generated and gitignored, so Wrangler must produce the
+  // entry point itself before bundling. Without this, a clean checkout (such as
+  // a Cloudflare Workers Build) fails with "entry-point file ... was not found".
+  // Note: do not add `no_bundle` here — OpenNext's worker.js relies on Wrangler
+  // to resolve its ./cloudflare/* and ./middleware/* imports.
+  "build": {
+    "command": "npm run build:worker"
+  },
   "compatibility_date": "2026-08-12",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
