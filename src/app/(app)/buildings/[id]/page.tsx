@@ -64,7 +64,7 @@ const TAB_GROUPS = [
   { id: "overview", label: "Overview", tabs: ["overview"] },
   { id: "materials", label: "Materials", tabs: ["inventory", "samples", "paint"] },
   { id: "spaces", label: "Spaces", tabs: ["spaces"] },
-  { id: "program", label: "Program", tabs: ["ppe", "repairs", "inspections"] },
+  { id: "program", label: "Program", tabs: ["inspections", "repairs", "ppe"] },
   { id: "records", label: "Records", tabs: ["photos", "documents", "plans"] },
   { id: "activity", label: "Activity", tabs: ["activity"] },
 ] as const;

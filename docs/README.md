@@ -1,5 +1,7 @@
 # STRATA design & implementation briefs
 
+For the cross-thread current-state register, see [Strata Chief of Staff](strata-chief-of-staff.md).
+
 Four specs written for an AI coding agent, in the order they should be worked.
 
 | brief | scope | mockups |
