@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { Camera, Loader2 } from "lucide-react";
 import { collectInspectionItemSample, saveInspectionItem } from "@/actions/mutations";
 import { fileUrl } from "@/lib/files";
+import { readStoredSession } from "@/lib/session-client";
 import { requiresFieldSample } from "@/lib/inspection-rules";
 import { cn, conditionTone, worstCondition } from "@/lib/utils";
 import { AcmChip, ConditionChip } from "@/components/ui/primitives";
@@ -401,9 +403,19 @@ export function FieldInspection({
                   <div className="font-display text-lg font-semibold leading-tight">{item.material}</div>
                   {item.location && <div className="mt-0.5 text-xs text-ink-3">{item.location}</div>}
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <AcmChip value={item.acm} />
-                  {itemComplete(item) && <span className="chip chip-ok">Done</span>}
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <AcmChip value={item.acm} />
+                    {itemComplete(item) && <span className="chip chip-ok">Done</span>}
+                  </div>
+                  <MaterialCamera
+                    item={item}
+                    buildingId={building.id}
+                    disabled={building.photoPolicy === "prohibited"}
+                    onStored={(storageKey) =>
+                      setLocal((values) => values.map((v) => (v.id === item.id ? { ...v, photo: storageKey } : v)))
+                    }
+                  />
                 </div>
               </div>
 
@@ -518,6 +530,92 @@ export function FieldInspection({
           <SubmitInspectionForm inspectionId={inspectionId} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One-tap capture straight from the material card. Sends `primaryPhoto=auto` so
+ * the first photo an item receives becomes its thumbnail, which is what proves
+ * to the inspector that the shot actually attached to this material.
+ */
+function MaterialCamera({
+  item,
+  buildingId,
+  disabled,
+  onStored,
+}: {
+  item: Item;
+  buildingId: string;
+  disabled?: boolean;
+  onStored: (storageKey: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (disabled) return null;
+
+  async function upload(file: File) {
+    setBusy(true);
+    setError("");
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      body.set("buildingId", buildingId);
+      body.set("recordType", "inventory");
+      body.set("recordId", item.inventoryId);
+      body.set("category", "condition");
+      body.set("caption", `${item.code} ${item.material}`);
+      body.set("primaryPhoto", "auto");
+      const token = readStoredSession();
+      const response = await fetch(`/api/buildings/${buildingId}/photos`, {
+        method: "POST",
+        body,
+        headers: token ? { "x-strata-session": token } : undefined,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; photo?: { id: string; storageKey: string } }
+        | null;
+      if (!response.ok || !payload?.photo) throw new Error(payload?.error || "Could not store photograph.");
+      onStored(payload.photo.storageKey);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not store photograph.");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void upload(file);
+        }}
+      />
+      <div className="flex items-center gap-2">
+        {item.photo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={fileUrl(item.photo)} alt="" className="h-9 w-9 rounded-lg object-cover" />
+        )}
+        <button
+          type="button"
+          aria-label={item.photo ? `Add another photo of ${item.material}` : `Take a photo of ${item.material}`}
+          className="btn btn-ghost h-9 w-9 !p-0"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+        </button>
+      </div>
+      {error && <span className="max-w-[9rem] text-right text-[10px] font-semibold text-status-action">{error}</span>}
     </div>
   );
 }

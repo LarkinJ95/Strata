@@ -966,6 +966,20 @@ export async function uploadPhoto(formData: FormData) {
     },
   });
 
+  // Field mode looks up an item's thumbnail with `primaryPhoto = 1`, so a capture
+  // that never sets the flag links correctly but stays invisible on the card.
+  // "auto" promotes the first photo an item receives without overriding a
+  // primary that someone has already chosen deliberately.
+  const primaryRequest = String(formData.get("primaryPhoto") || "");
+  let primaryPhoto = primaryRequest === "true";
+  if (primaryRequest === "auto" && recordType === "inventory" && recordId) {
+    const existingPrimary = await db.photoLink.findFirst({
+      where: { inventoryItemId: recordId, primaryPhoto: true },
+      select: { id: true },
+    });
+    primaryPhoto = !existingPrimary;
+  }
+
   await db.photoLink.create({
     data: {
       photoId: photo.id,
@@ -973,6 +987,7 @@ export async function uploadPhoto(formData: FormData) {
       recordId,
       category,
       caption,
+      primaryPhoto,
       inventoryItemId: recordType === "inventory" ? recordId : undefined,
       inspectionId: recordType === "inspection" ? recordId : undefined,
       repairId: recordType === "repair" ? recordId : undefined,
