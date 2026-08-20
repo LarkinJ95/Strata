@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { assertBuildingAccess, can, getSession } from "@/lib/auth";
 import { activity, audit } from "@/lib/audit";
 import { persistBuildingCompliance } from "@/lib/compliance";
+import { syncBuildingInspectionSchedule } from "@/lib/inspection-schedule";
 import { putUpload } from "@/lib/storage";
 import { requiresFieldSample } from "@/lib/inspection-rules";
 
@@ -306,7 +307,7 @@ export async function submitInspection(inspectionId: string, signatureName: stri
       signedAt: performedAt,
     },
   });
-  if (!insp.building.lastInspectionAt || performedAt > insp.building.lastInspectionAt) await db.building.update({ where: { id: insp.buildingId }, data: { lastInspectionAt: performedAt, nextInspectionAt: new Date(performedAt.getTime() + (insp.building.inspectionIntervalDays || 365) * 86400000) } });
+  await syncBuildingInspectionSchedule(insp.buildingId);
   await persistBuildingCompliance(insp.buildingId);
   await activity({
     user,
@@ -360,7 +361,7 @@ export async function saveHistoricalInspection(input: { buildingId: string; insp
       }
     }
   }
-  if (input.status === "completed" && (!building.lastInspectionAt || input.performedAt > building.lastInspectionAt)) await db.building.update({ where: { id: building.id }, data: { lastInspectionAt: input.performedAt, nextInspectionAt: new Date(input.performedAt.getTime() + building.inspectionIntervalDays * 86400000) } });
+  if (input.status === "completed") await syncBuildingInspectionSchedule(building.id);
   if (input.status === "completed") await db.signature.create({ data: { organizationId: user.organizationId, inspectionId: inspection.id, userId: user.id, signerName: input.inspectorName, signatureData: input.inspectorName, meaning: "Historical entry", signedAt: input.performedAt } });
   await activity({ user, organizationId: user.organizationId, clientId: building.clientId, buildingId: building.id, inspectionId: inspection.id, eventType: "inspection", title: "Historical inspection recorded", detail: input.performedAt.toISOString().slice(0, 10) });
   await audit({ user, action: "inspection.backfill", recordType: "inspection", recordId: inspection.id, newValue: input });

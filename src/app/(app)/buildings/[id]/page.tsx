@@ -43,6 +43,7 @@ import {
 } from "@/components/forms/entity-editors";
 import { cn } from "@/lib/utils";
 import { WorkRecordEditor } from "@/components/forms/work-record-editor";
+import { summarizeInspectionConditions } from "@/lib/inspection-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,7 @@ export default async function BuildingPage({
     },
   });
   if (!buildingRecord || !assertBuildingAccess(user, buildingRecord)) notFound();
-  const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, workRecords, samples, inspections, activities, documents, photos, floorPlans] = await Promise.all([
+  const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, workRecords, samples, inspections, inspectionConditionResults, activities, documents, photos, floorPlans] = await Promise.all([
     db.buildingFloor.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { level: "asc" }, include: { areas: true } }),
     db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } }),
     db.paintSample.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { sampleNumber: "asc" } }),
@@ -104,11 +105,18 @@ export default async function BuildingPage({
     db.workRecord.findMany({ where: { buildingId: buildingRecord.id }, include: { assignedUser: true, _count: { select: { items: true, documents: true } } }, orderBy: { createdAt: "desc" } }),
     db.sample.findMany({ where: { buildingId: buildingRecord.id }, include: { layers: { include: { result: true } } }, orderBy: { collectionDate: "desc" } }),
     db.inspection.findMany({ where: { buildingId: buildingRecord.id }, include: { inspector: true }, orderBy: { scheduledDate: "desc" } }),
+    db.inspectionItem.findMany({ where: { inspection: { buildingId: buildingRecord.id } }, select: { inspectionId: true, currentCondition: true } }),
     db.activityEvent.findMany({ where: { buildingId: buildingRecord.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 }),
     db.document.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
     db.photo.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
     db.floorPlan.findMany({ where: { buildingId: buildingRecord.id }, include: { markers: true } }),
   ]);
+  const conditionResultsByInspection = new Map<string, Array<string | null>>();
+  for (const result of inspectionConditionResults) {
+    const results = conditionResultsByInspection.get(result.inspectionId) ?? [];
+    results.push(result.currentCondition);
+    conditionResultsByInspection.set(result.inspectionId, results);
+  }
   const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, workRecords, samples, inspections, activities, documents, photos, floorPlans };
 
   const laboratories = user.isClient ? [] : await db.laboratory.findMany({
@@ -538,7 +546,15 @@ export default async function BuildingPage({
                   <Link href={i.status === "in_progress" ? `/inspections/${i.id}/field` : `/inspections/${i.id}`} className="font-medium capitalize">
                     {i.inspectionType.replaceAll("_", " ")}
                   </Link>
-                  <Chip tone={i.status === "completed" ? "ok" : "ice"}>{i.status.replaceAll("_", " ")}</Chip>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Chip tone={i.status === "completed" ? "ok" : "ice"}>{i.status.replaceAll("_", " ")}</Chip>
+                    {i.status === "completed" && (() => {
+                      const summary = summarizeInspectionConditions(conditionResultsByInspection.get(i.id) ?? []);
+                      if (summary === "good") return <Chip tone="ok">Asbestos is in Good Condition</Chip>;
+                      if (summary === "needs_repair") return <Chip tone="danger">Asbestos is in need of repair</Chip>;
+                      return <Chip tone="ice">No material condition recorded</Chip>;
+                    })()}
+                  </div>
                 </div>
                 <div className="mb-2 text-xs text-ink-3">{formatDate(i.scheduledDate)} · {i.inspector?.name}</div>
                 {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><InspectionEditor inspection={i} /></div></details>}
