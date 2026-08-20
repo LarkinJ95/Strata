@@ -90,7 +90,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
 
   // Two flat queries rather than a nested include, for the same D1 parameter
   // reason noted above. Both result sets are small.
-  const [plans, floors] = await Promise.all([
+  const [plans, floors, areas] = await Promise.all([
     db.floorPlan.findMany({
       where: { buildingId: insp.buildingId, organizationId: user.organizationId },
       select: { id: true, name: true, storageKey: true, mimeType: true, floorId: true },
@@ -99,6 +99,12 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
     db.buildingFloor.findMany({
       where: { buildingId: insp.buildingId },
       select: { id: true, name: true },
+    }),
+    // Catalogued spaces that hold no inventory yet still exist to be walked
+    // into, so they can be picked when adding a material found in one.
+    db.buildingArea.findMany({
+      where: { buildingId: insp.buildingId },
+      select: { name: true, floorId: true },
     }),
   ]);
   const floorNames = new Map(floors.map((floor) => [floor.id, floor.name]));
@@ -115,6 +121,11 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         client: insp.building.client.name,
       }}
       completion={insp.completionPct}
+      buildingFloors={floors.map((floor) => floor.name)}
+      buildingRooms={areas.map((area) => ({
+        floor: area.floorId ? floorNames.get(area.floorId) ?? null : null,
+        room: area.name,
+      }))}
       floorPlans={plans.map((plan) => ({
         id: plan.id,
         name: plan.name,

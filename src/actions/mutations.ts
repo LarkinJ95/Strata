@@ -869,6 +869,7 @@ export async function createSuspectMaterial(input: {
   room?: string;
   location?: string;
   material: string;
+  materialCategory?: string;
   estimatedQty?: number;
   unit?: string;
   condition?: string;
@@ -897,7 +898,7 @@ export async function createSuspectMaterial(input: {
       floor: input.floor,
       room: input.room,
       specificLocation: input.location,
-      materialCategory: "Miscellaneous",
+      materialCategory: input.materialCategory || "Miscellaneous",
       materialDescription: input.material,
       acmClassification: input.action === "Assume ACM" ? "assumed_acm" : "unknown",
       originalQuantity: input.estimatedQty,
@@ -927,8 +928,41 @@ export async function createSuspectMaterial(input: {
       notes: input.notes,
     },
   });
+  // A material found mid-inspection belongs to that inspection: without an
+  // InspectionItem it never appears in the inspector's room sweep, so it could
+  // not be given a condition, a photograph, or a sample.
+  let inspectionItemId: string | null = null;
+  if (input.inspectionId) {
+    const inspection = await db.inspection.findFirst({
+      where: { id: input.inspectionId, organizationId: user.organizationId },
+      select: { id: true },
+    });
+    if (inspection) {
+      const inspectionItem = await db.inspectionItem.create({
+        data: {
+          inspectionId: inspection.id,
+          inventoryItemId: item.id,
+          currentCondition: input.condition ?? null,
+          inspected: false,
+        },
+      });
+      inspectionItemId = inspectionItem.id;
+    }
+  }
+
   revalidatePath(`/buildings/${building.id}`);
-  return item.id;
+  return {
+    id: item.id,
+    inspectionItemId,
+    inventoryCode: item.inventoryCode,
+    floor: item.floor,
+    room: item.room,
+    specificLocation: item.specificLocation,
+    materialDescription: item.materialDescription,
+    acmClassification: item.acmClassification,
+    currentQuantity: item.currentQuantity,
+    quantityUnit: item.quantityUnit,
+  };
 }
 
 export async function uploadPhoto(formData: FormData) {

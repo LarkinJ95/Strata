@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CloudOff, Loader2, Map as MapIcon, RotateCcw, X } from "lucide-react";
+import { Camera, ChevronDown, CloudOff, Loader2, Map as MapIcon, RotateCcw, X } from "lucide-react";
 import { collectInspectionItemSample } from "@/actions/mutations";
 import { countPending, drain, enqueue } from "@/lib/field-queue";
 import { fileUrl } from "@/lib/files";
+import { uploadCapture } from "@/lib/photo-capture";
 import { readStoredSession } from "@/lib/session-client";
 import { requiresFieldSample } from "@/lib/inspection-rules";
 import { cn, conditionTone, worstCondition } from "@/lib/utils";
 import { AcmChip, ConditionChip } from "@/components/ui/primitives";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { SubmitInspectionForm } from "@/components/forms/actions-ui";
-import { NewMaterialInline } from "@/components/forms/new-material";
+import { NewMaterialInline, type CreatedMaterial } from "@/components/forms/new-material";
 
 const CONDITIONS = [
   { id: "good", label: "Good" },
@@ -253,6 +255,10 @@ function groupRooms(items: Item[]): Room[] {
  */
 function roomStatus(room: Room, photoPolicy: string) {
   const done = room.items.filter(itemComplete).length;
+  // An item that has been assessed but still owes a sample is not "done", yet
+  // the room has plainly been walked. Tracking that separately keeps such a
+  // room out of the not-inspected band and off the "Not started" label.
+  const touched = room.items.filter((i) => i.currentCondition || i.inspected).length;
   const total = room.items.length;
   const complete = done === total;
   const pendingSamples = room.items.filter(sampleOutstanding).length;
@@ -261,9 +267,44 @@ function roomStatus(room: Room, photoPolicy: string) {
   // A sample is only ever owed on a damaged / significantly damaged /
   // needs-repair material, so the condition tone is already at least "warn"
   // here. Overriding it with "warn" could only ever mask a "danger" room.
-  const tone = !complete ? (done === 0 ? "untouched" : "partial") : conditionTone(worst ?? "");
-  return { done, total, complete, pendingSamples, pendingPhotos, worst, tone };
+  const tone = !complete ? (touched === 0 ? "untouched" : "partial") : conditionTone(worst ?? "");
+  return { done, total, touched, complete, pendingSamples, pendingPhotos, worst, tone };
 }
+
+/**
+ * Work order for the rooms list: what still needs a visit rises, what is
+ * finished sinks. Within a band the natural floor/room walk order is kept.
+ *   0 not inspected  1 outstanding requirements  2 done with damage  3 done
+ */
+const DAMAGE_CONDITIONS = ["needs_repair", "damaged", "significantly_damaged"];
+
+function roomRank(status: ReturnType<typeof roomStatus>) {
+  if (status.touched === 0) return 0;
+  if (!status.complete || status.pendingSamples > 0 || status.pendingPhotos > 0) return 1;
+  if (status.worst && DAMAGE_CONDITIONS.includes(status.worst)) return 2;
+  return 3;
+}
+
+/**
+ * Status bands for the rooms list. Completed rooms collapse by default: in a
+ * 100-room building they are the majority by the end of a sweep, and hiding
+ * them also stops a finished room visibly reshuffling under the inspector's
+ * thumb - it simply leaves the working list.
+ */
+const ROOM_BANDS = [
+  { rank: 0, id: "untouched", label: "Not inspected", defaultOpen: true, accent: "bg-[#cbd5e1]" },
+  { rank: 1, id: "outstanding", label: "Outstanding requirements", defaultOpen: true, accent: "bg-[#2563eb]" },
+  { rank: 2, id: "damaged", label: "Damaged", defaultOpen: true, accent: "bg-[#d97706]" },
+  { rank: 3, id: "complete", label: "Completed", defaultOpen: false, accent: "bg-[#17a34a]" },
+] as const;
+
+const MAIN_TABS = [
+  { id: "rooms", label: "Rooms" },
+  { id: "material", label: "New material" },
+  { id: "end", label: "End inspection" },
+] as const;
+
+type MainTab = (typeof MAIN_TABS)[number]["id"];
 
 const ROOM_ROW: Record<string, string> = {
   untouched: "border-l-[#cbd5e1] bg-white",
@@ -282,12 +323,16 @@ export function FieldInspection({
   items,
   completion,
   floorPlans = [],
+  buildingFloors = [],
+  buildingRooms = [],
 }: {
   inspectionId: string;
   building: { id: string; name: string; number: string; photoPolicy: string; photoMessage: string | null; client: string };
   items: Item[];
   completion: number;
   floorPlans?: FieldFloorPlan[];
+  buildingFloors?: string[];
+  buildingRooms?: { floor: string | null; room: string }[];
 }) {
   const [local, setLocal] = useState(items);
   const [roomKey, setRoomKey] = useState<string | null>(null);
@@ -300,6 +345,11 @@ export function FieldInspection({
   const [syncing, setSyncing] = useState(false);
   const [undo, setUndo] = useState<{ item: Item; label: string } | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
+  const [tab, setTab] = useState<MainTab>("rooms");
+  const [openBands, setOpenBands] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(ROOM_BANDS.map((band) => [band.id, band.defaultOpen]))
+  );
+  const router = useRouter();
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useScreenAwake();
@@ -307,6 +357,9 @@ export function FieldInspection({
   const rooms = useMemo(() => groupRooms(local), [local]);
   const done = local.filter(itemComplete).length;
   const pct = local.length ? Math.round((done / local.length) * 100) : completion;
+
+  const outstandingSamples = local.filter(sampleOutstanding).length;
+  const outstandingPhotos = local.filter((i) => photoOutstanding(i, building.photoPolicy)).length;
 
   const activeRoom = roomKey ? rooms.find((r) => r.key === roomKey) ?? null : null;
   const openItem = openItemId ? local.find((i) => i.id === openItemId) ?? null : null;
@@ -438,15 +491,87 @@ export function FieldInspection({
       ? `${syncing ? "Syncing" : "Waiting to sync"} - ${queued}`
       : "All saved";
 
-  const visibleRooms = useMemo(() => {
+  const floorOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const name of buildingFloors) if (name.trim()) names.add(name.trim());
+    for (const item of local) if (item.floor?.trim()) names.add(item.floor.trim());
+    return [...names].sort(naturalCompare);
+  }, [local, buildingFloors]);
+
+  const roomsByFloor = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const room of rooms) {
+      if (room.room === "Unassigned room") continue;
+      (map[room.floor] ??= []).push(room.room);
+    }
+    // Catalogued spaces that hold no inventory are still real rooms an
+    // inspector can walk into and find something in.
+    for (const area of buildingRooms) {
+      const key = area.floor?.trim();
+      if (!key || !area.room.trim()) continue;
+      (map[key] ??= []).push(area.room.trim());
+    }
+    for (const key of Object.keys(map)) map[key] = [...new Set(map[key])].sort(naturalCompare);
+    return map;
+  }, [rooms, buildingRooms]);
+
+  const addCreated = useCallback((created: CreatedMaterial, photo: string | null) => {
+    if (!created.inspectionItemId) {
+      // No InspectionItem means the material exists but is not part of this
+      // sweep; a refresh is the honest way to reflect that.
+      router.refresh();
+      return;
+    }
+    setLocal((arr) => [
+      ...arr,
+      {
+        id: created.inspectionItemId!,
+        inventoryId: created.id,
+        code: created.inventoryCode,
+        material: created.materialDescription,
+        floor: created.floor,
+        room: created.room,
+        location: created.specificLocation,
+        qty: created.currentQuantity,
+        unit: created.quantityUnit,
+        acm: created.acmClassification,
+        previousCondition: null,
+        currentCondition: null,
+        previousLabel: null,
+        currentLabel: null,
+        notes: null,
+        inspected: false,
+        sampleCollected: false,
+        photo,
+      },
+    ]);
+  }, [router]);
+
+  // `rooms` arrives in walk order (floor, then room, naturally sorted), and
+  // bucketing preserves that order inside each band, so a band always reads as
+  // a route through the building rather than an arbitrary pile.
+  const bands = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rooms;
-    return rooms.filter(
-      (room) =>
-        `${room.floor} ${room.room}`.toLowerCase().includes(q) ||
-        room.items.some((i) => `${i.code} ${i.material} ${i.location ?? ""}`.toLowerCase().includes(q))
-    );
-  }, [rooms, query]);
+    const matched = q
+      ? rooms.filter(
+          (room) =>
+            `${room.floor} ${room.room}`.toLowerCase().includes(q) ||
+            room.items.some((i) => `${i.code} ${i.material} ${i.location ?? ""}`.toLowerCase().includes(q))
+        )
+      : rooms;
+
+    const buckets = new Map<number, { room: Room; status: ReturnType<typeof roomStatus> }[]>();
+    for (const room of matched) {
+      const status = roomStatus(room, building.photoPolicy);
+      const list = buckets.get(roomRank(status));
+      if (list) list.push({ room, status });
+      else buckets.set(roomRank(status), [{ room, status }]);
+    }
+    return ROOM_BANDS.map((band) => ({ ...band, entries: buckets.get(band.rank) ?? [] }));
+  }, [rooms, query, building.photoPolicy]);
+
+  const matchCount = bands.reduce((total, band) => total + band.entries.length, 0);
+  const searching = query.trim().length > 0;
 
   if (!local.length) {
     return (
@@ -738,6 +863,13 @@ export function FieldInspection({
                 </div>
               </div>
 
+              {!item.previousCondition && (
+                <div className="mt-2 text-xs text-ink-3">
+                  {/* No prior cycle to carry forward, so the missing "Same as
+                      last" shortcut is expected rather than a fault. */}
+                  <span className="chip chip-ice">New this inspection</span>
+                </div>
+              )}
               {item.previousCondition && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
                   <span>Previously</span>
@@ -808,6 +940,25 @@ export function FieldInspection({
         </div>
       </div>
 
+      <div className="mb-4 flex gap-1 rounded-xl bg-paper-3 p-1">
+        {MAIN_TABS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => setTab(entry.id)}
+            aria-current={tab === entry.id}
+            className={cn(
+              "flex-1 rounded-lg px-2 py-2 text-xs font-semibold",
+              tab === entry.id ? "bg-white text-ink shadow-sm" : "text-ink-3"
+            )}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "rooms" && (
+        <>
       <input
         className="mb-4 w-full"
         placeholder="Search room, material, or code"
@@ -815,106 +966,125 @@ export function FieldInspection({
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      <div className="overflow-hidden rounded-2xl border border-[rgba(16,36,72,0.1)] bg-white">
-        {visibleRooms.map((room, index) => {
-          const status = roomStatus(room, building.photoPolicy);
-          const outstanding: string[] = [];
-          if (status.pendingSamples) outstanding.push(`${status.pendingSamples} sample${status.pendingSamples === 1 ? "" : "s"}`);
-          if (status.pendingPhotos) outstanding.push(`${status.pendingPhotos} photo${status.pendingPhotos === 1 ? "" : "s"}`);
+      <div className="grid gap-3">
+        {bands.map((band) => {
+          if (!band.entries.length) return null;
+          // A search should never hide a hit behind a collapsed heading.
+          const open = searching || openBands[band.id];
           return (
-            <button
-              key={room.key}
-              onClick={() => setRoomKey(room.key)}
-              className={cn(
-                "flex w-full flex-col gap-0.5 border-l-4 px-3 py-2 text-left",
-                index > 0 && "border-t border-t-[rgba(16,36,72,0.07)]",
-                ROOM_ROW[status.tone] ?? ROOM_ROW.untouched
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-sm leading-tight">
-                  <span className="text-ink-3">{room.floor}</span>
-                  <span className="mx-1.5 text-ink-4">&middot;</span>
-                  <span className="font-display font-semibold">{room.room}</span>
+            <div key={band.id} className="overflow-hidden rounded-2xl border border-[rgba(16,36,72,0.1)] bg-white">
+              <button
+                type="button"
+                onClick={() => setOpenBands((prev) => ({ ...prev, [band.id]: !prev[band.id] }))}
+                aria-expanded={open}
+                disabled={searching}
+                className="flex w-full items-center gap-2 bg-paper-2 px-3 py-2 text-left"
+              >
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", band.accent)} />
+                <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-2">
+                  {band.label}
                 </span>
-                <span className="shrink-0 font-mono text-xs tabular-nums text-ink-2">
-                  {status.done}/{status.total}
-                </span>
-                <span className="w-[4.75rem] shrink-0 text-right">
-                  {status.complete && status.worst ? (
-                    <ConditionChip value={status.worst} />
-                  ) : (
-                    <span className="text-[11px] text-ink-3">{status.done === 0 ? "Not started" : "In progress"}</span>
-                  )}
-                </span>
-              </div>
-              {outstanding.length > 0 && (
-                <div className="text-[11px] font-semibold text-[#a23725]">{outstanding.join(" \u00b7 ")} outstanding</div>
-              )}
-            </button>
+                <span className="font-mono text-xs tabular-nums text-ink-3">{band.entries.length}</span>
+                {!searching && <ChevronDown className={cn("h-4 w-4 text-ink-3 transition-transform", !open && "-rotate-90")} />}
+              </button>
+
+              {open &&
+                band.entries.map(({ room, status }, index) => {
+                  const outstanding: string[] = [];
+                  if (status.pendingSamples) outstanding.push(`${status.pendingSamples} sample${status.pendingSamples === 1 ? "" : "s"}`);
+                  if (status.pendingPhotos) outstanding.push(`${status.pendingPhotos} photo${status.pendingPhotos === 1 ? "" : "s"}`);
+                  return (
+                    <button
+                      key={room.key}
+                      onClick={() => setRoomKey(room.key)}
+                      className={cn(
+                        "flex w-full flex-col gap-0.5 border-l-4 px-3 py-2 text-left",
+                        "border-t border-t-[rgba(16,36,72,0.07)]",
+                        index === 0 && "border-t-[rgba(16,36,72,0.12)]",
+                        ROOM_ROW[status.tone] ?? ROOM_ROW.untouched
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm leading-tight">
+                          <span className="text-ink-3">{room.floor}</span>
+                          <span className="mx-1.5 text-ink-4">&middot;</span>
+                          <span className="font-display font-semibold">{room.room}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-xs tabular-nums text-ink-2">
+                          {status.done}/{status.total}
+                        </span>
+                        <span className="w-[4.75rem] shrink-0 text-right">
+                          {status.complete && status.worst ? (
+                            <ConditionChip value={status.worst} />
+                          ) : (
+                            <span className="text-[11px] text-ink-3">{status.touched === 0 ? "Not started" : "In progress"}</span>
+                          )}
+                        </span>
+                      </div>
+                      {outstanding.length > 0 && (
+                        <div className="text-[11px] font-semibold text-[#a23725]">{outstanding.join(" \u00b7 ")} outstanding</div>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
           );
         })}
       </div>
-      {!visibleRooms.length && <div className="panel rounded-2xl p-5 text-sm text-ink-3">No rooms match that search.</div>}
+      {!matchCount && <div className="panel rounded-2xl p-5 text-sm text-ink-3">No rooms match that search.</div>}
+        </>
+      )}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      {tab === "material" && (
         <div className="panel rounded-2xl p-4">
-          <div className="mb-2 font-display font-semibold">New suspect material</div>
-          <NewMaterialInline buildingId={building.id} inspectionId={inspectionId} />
+          <div className="mb-1 font-display font-semibold">New suspect material</div>
+          <p className="mb-3 text-xs text-ink-3">
+            Added to this inspection, so it appears in its room ready to be assessed.
+          </p>
+          <NewMaterialInline
+            buildingId={building.id}
+            inspectionId={inspectionId}
+            floors={floorOptions}
+            roomsByFloor={roomsByFloor}
+            onCreated={(created, photo) => {
+              addCreated(created, photo);
+              setTab("rooms");
+            }}
+          />
         </div>
-        <div className="panel rounded-2xl p-4">
-          <div className="mb-2 font-display font-semibold">Sign &amp; submit</div>
-          <SubmitInspectionForm inspectionId={inspectionId} />
+      )}
+
+      {tab === "end" && (
+        <div className="grid gap-4">
+          <div className="panel rounded-2xl p-4">
+            <div className="mb-2 font-display font-semibold">Before you finish</div>
+            <ul className="grid gap-1.5 text-sm">
+              <li className={cn("flex justify-between gap-3", done === local.length ? "text-[#157347]" : "text-status-attention")}>
+                <span>Materials inspected</span>
+                <span className="font-mono">{done}/{local.length}</span>
+              </li>
+              <li className={cn("flex justify-between gap-3", outstandingSamples ? "text-status-action" : "text-ink-3")}>
+                <span>Samples outstanding</span>
+                <span className="font-mono">{outstandingSamples}</span>
+              </li>
+              <li className={cn("flex justify-between gap-3", outstandingPhotos ? "text-status-attention" : "text-ink-3")}>
+                <span>Photographs outstanding</span>
+                <span className="font-mono">{outstandingPhotos}</span>
+              </li>
+              <li className={cn("flex justify-between gap-3", queued ? "text-status-attention" : "text-ink-3")}>
+                <span>Changes waiting to sync</span>
+                <span className="font-mono">{queued}</span>
+              </li>
+            </ul>
+          </div>
+          <div className="panel rounded-2xl p-4">
+            <div className="mb-2 font-display font-semibold">Sign &amp; submit</div>
+            <SubmitInspectionForm inspectionId={inspectionId} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
-}
-
-/** Frame dimensions, read from the blob so no server-side decode is needed. */
-function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    if (typeof createImageBitmap !== "function") {
-      resolve(null);
-      return;
-    }
-    createImageBitmap(file)
-      .then((bitmap) => {
-        const size = { width: bitmap.width, height: bitmap.height };
-        bitmap.close?.();
-        resolve(size);
-      })
-      .catch(() => resolve(null));
-  });
-}
-
-/** Coordinates, if the inspector has already granted location. Times out fast
- *  so a slow GPS fix never holds up the upload. */
-function readPosition(): Promise<{ latitude: number; longitude: number } | null> {
-  return new Promise((resolve) => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-    let settled = false;
-    const finish = (value: { latitude: number; longitude: number } | null) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-    const timer = setTimeout(() => finish(null), 4000);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        clearTimeout(timer);
-        finish({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-      },
-      () => {
-        clearTimeout(timer);
-        finish(null);
-      },
-      { enableHighAccuracy: false, maximumAge: 120000, timeout: 4000 }
-    );
-  });
 }
 
 /**
@@ -943,39 +1113,14 @@ function MaterialCamera({
     setBusy(true);
     setError("");
     try {
-      const body = new FormData();
-      body.set("file", file);
-      body.set("buildingId", buildingId);
-      body.set("recordType", "inventory");
-      body.set("recordId", item.inventoryId);
-      body.set("category", "condition");
-      body.set("caption", `${item.code} ${item.material}`);
-      body.set("primaryPhoto", "auto");
-      // Provenance: when the shutter actually fired, the frame size, and where
-      // the inspector was standing. All best-effort - a refused location
-      // prompt or an unreadable frame must never block storing the photograph.
-      if (file.lastModified) body.set("capturedAt", new Date(file.lastModified).toISOString());
-      const size = await readImageSize(file);
-      if (size) {
-        body.set("width", String(size.width));
-        body.set("height", String(size.height));
-      }
-      const position = await readPosition();
-      if (position) {
-        body.set("latitude", String(position.latitude));
-        body.set("longitude", String(position.longitude));
-      }
-      const token = readStoredSession();
-      const response = await fetch(`/api/buildings/${buildingId}/photos`, {
-        method: "POST",
-        body,
-        headers: token ? { "x-strata-session": token } : undefined,
+      const stored = await uploadCapture({
+        file,
+        buildingId,
+        inventoryId: item.inventoryId,
+        caption: `${item.code} ${item.material}`,
+        category: "condition",
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; photo?: { id: string; storageKey: string } }
-        | null;
-      if (!response.ok || !payload?.photo) throw new Error(payload?.error || "Could not store photograph.");
-      onStored(payload.photo.storageKey);
+      onStored(stored.storageKey);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not store photograph.");
     } finally {
