@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { collectInspectionItemSample, saveInspectionItem } from "@/actions/mutations";
 import { fileUrl } from "@/lib/files";
 import { requiresFieldSample } from "@/lib/inspection-rules";
+import { cn, conditionTone, worstCondition } from "@/lib/utils";
 import { AcmChip, ConditionChip } from "@/components/ui/primitives";
 import { PhotoUpload } from "@/components/forms/photo-upload";
 import { SubmitInspectionForm } from "@/components/forms/actions-ui";
@@ -50,6 +51,83 @@ type Item = {
   removedQuantity?: number | null;
 };
 
+/** An item counts as finished only once any lab confirmation it triggered has been collected. */
+function itemComplete(item: Item) {
+  return item.inspected && (!requiresFieldSample(item.acm, item.currentCondition) || item.sampleCollected);
+}
+
+function sampleOutstanding(item: Item) {
+  return requiresFieldSample(item.acm, item.currentCondition) && !item.sampleCollected;
+}
+
+/** "Room 10" must sort after "Room 9", so compare digit runs numerically. */
+function naturalCompare(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+type Room = {
+  key: string;
+  floor: string;
+  room: string;
+  items: Item[];
+};
+
+function groupRooms(items: Item[]): Room[] {
+  const map = new Map<string, Room>();
+  for (const item of items) {
+    const floor = item.floor?.trim() || "Unassigned floor";
+    const room = item.room?.trim() || "Unassigned room";
+    const key = `${floor} :: ${room}`;
+    const existing = map.get(key);
+    if (existing) existing.items.push(item);
+    else map.set(key, { key, floor, room, items: [item] });
+  }
+  return [...map.values()].sort((a, b) => naturalCompare(a.floor, b.floor) || naturalCompare(a.room, b.room));
+}
+
+/**
+ * A room is colour-coded by the worst condition recorded in it, but only once
+ * every material in it is finished. A partly-swept room stays neutral so that
+ * green always means "done, and nothing wrong here".
+ */
+function roomStatus(room: Room) {
+  const done = room.items.filter(itemComplete).length;
+  const total = room.items.length;
+  const complete = done === total;
+  const pendingSamples = room.items.filter(sampleOutstanding).length;
+  const worst = worstCondition(room.items.map((i) => i.currentCondition).filter((c): c is string => Boolean(c)));
+  const tone = !complete
+    ? done === 0
+      ? "untouched"
+      : "partial"
+    : pendingSamples > 0
+      ? "warn"
+      : conditionTone(worst ?? "");
+  return { done, total, complete, pendingSamples, worst, tone };
+}
+
+const ROOM_CARD: Record<string, string> = {
+  untouched: "border-[rgba(16,36,72,0.12)] bg-white",
+  partial: "border-[#c7d7fb] bg-[#eef4ff]",
+  ok: "border-[#b7e4c7] bg-[#e8f8ef]",
+  fair: "border-[#c7d7fb] bg-[#eef4ff]",
+  warn: "border-[#f0d29a] bg-[#fff4e0]",
+  danger: "border-[#f4c2c0] bg-[#fdecec]",
+  removed: "border-[#d4dae3] bg-[#eef1f5]",
+  muted: "border-[#d4dae3] bg-[#eef1f5]",
+};
+
+const ROOM_DOT: Record<string, string> = {
+  untouched: "bg-[#cbd5e1]",
+  partial: "bg-[#2563eb]",
+  ok: "bg-[#17a34a]",
+  fair: "bg-[#2563eb]",
+  warn: "bg-[#d97706]",
+  danger: "bg-[#dc2626]",
+  removed: "bg-[#94a3b8]",
+  muted: "bg-[#94a3b8]",
+};
+
 export function FieldInspection({
   inspectionId,
   building,
@@ -61,25 +139,28 @@ export function FieldInspection({
   items: Item[];
   completion: number;
 }) {
-  const [idx, setIdx] = useState(() => Math.max(0, items.findIndex((i) => !i.inspected)));
   const [local, setLocal] = useState(items);
+  const [roomKey, setRoomKey] = useState<string | null>(null);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState("");
   const [sampleMessage, setSampleMessage] = useState("");
   const [samplePending, setSamplePending] = useState(false);
-  const [routeOpen, setRouteOpen] = useState(false);
-  const [routeQuery, setRouteQuery] = useState("");
-  const item = local[idx];
-  const done = local.filter((i) => i.inspected && (!requiresFieldSample(i.acm, i.currentCondition) || i.sampleCollected)).length;
+
+  const rooms = useMemo(() => groupRooms(local), [local]);
+  const done = local.filter(itemComplete).length;
   const pct = local.length ? Math.round((done / local.length) * 100) : completion;
 
-  function patch(p: Partial<Item>) {
-    if (!item) return;
-    const next = { ...item, ...p };
-    setLocal((arr) => arr.map((x) => (x.id === item.id ? next : x)));
+  const activeRoom = roomKey ? rooms.find((r) => r.key === roomKey) ?? null : null;
+  const openItem = openItemId ? local.find((i) => i.id === openItemId) ?? null : null;
+
+  function patch(target: Item, p: Partial<Item>) {
+    const next = { ...target, ...p };
+    setLocal((arr) => arr.map((x) => (x.id === target.id ? next : x)));
     start(async () => {
       await saveInspectionItem({
-        itemId: item.id,
+        itemId: target.id,
         currentCondition: next.currentCondition ?? undefined,
         currentLabel: next.currentLabel ?? undefined,
         notes: next.notes ?? undefined,
@@ -92,13 +173,17 @@ export function FieldInspection({
     });
   }
 
-  const needsPhoto = useMemo(
-    () => ["damaged", "significantly_damaged", "needs_repair", "removed"].includes(item?.currentCondition || "") && building.photoPolicy !== "prohibited",
-    [item?.currentCondition, building.photoPolicy]
-  );
-  const needsSample = requiresFieldSample(item?.acm, item?.currentCondition);
+  const visibleRooms = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter(
+      (room) =>
+        `${room.floor} ${room.room}`.toLowerCase().includes(q) ||
+        room.items.some((i) => `${i.code} ${i.material} ${i.location ?? ""}`.toLowerCase().includes(q))
+    );
+  }, [rooms, query]);
 
-  if (!item) {
+  if (!local.length) {
     return (
       <div className="mx-auto max-w-xl">
         <h1 className="font-display text-2xl font-semibold">No inventory on this inspection</h1>
@@ -106,78 +191,84 @@ export function FieldInspection({
     );
   }
 
-  return (
-    <div className="mx-auto max-w-3xl pb-16">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.16em] text-teal">{building.client}</div>
-          <h1 className="font-display text-xl font-semibold">{building.number} · {building.name}</h1>
-        </div>
-        <Link href={`/inspections/${inspectionId}`} className="btn btn-ghost text-xs">Exit field mode</Link>
+  const header = (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-[0.16em] text-teal">{building.client}</div>
+        <h1 className="truncate font-display text-xl font-semibold">
+          {building.number} &middot; {building.name}
+        </h1>
       </div>
+      <Link href={`/inspections/${inspectionId}`} className="btn btn-ghost shrink-0 text-xs">
+        Exit field mode
+      </Link>
+    </div>
+  );
 
-      <button className="btn btn-ghost mb-4 w-full" onClick={() => setRouteOpen(true)}>Route · {done}/{local.length} complete</button>
-      {routeOpen && <div className="fixed inset-0 z-50 bg-[rgba(12,19,32,0.42)] p-4"><div className="mx-auto mt-8 max-w-xl rounded-2xl bg-white p-4 shadow-xl"><div className="mb-3 flex gap-2"><input autoFocus className="flex-1" placeholder="Search code, material, room" value={routeQuery} onChange={(e) => setRouteQuery(e.target.value)} /><button className="btn btn-ghost" onClick={() => setRouteOpen(false)}>Close</button></div><div className="max-h-[70vh] overflow-y-auto">{local.filter((candidate) => `${candidate.code} ${candidate.material} ${candidate.room || ""}`.toLowerCase().includes(routeQuery.toLowerCase())).map((candidate) => { const actualIndex = local.findIndex((value) => value.id === candidate.id); const sampleOutstanding = requiresFieldSample(candidate.acm, candidate.currentCondition) && !candidate.sampleCollected; return <button key={candidate.id} onClick={() => { setIdx(actualIndex); setRouteOpen(false); }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-paper-2 ${actualIndex === idx ? "bg-teal-soft" : ""}`}><span><span className="mr-2">{candidate.inspected && !sampleOutstanding ? "✓" : candidate.currentCondition ? "!" : "○"}</span><b>{candidate.material}</b><span className="ml-2 text-xs text-ink-3">{candidate.code} · {candidate.floor} · {candidate.room}</span></span><span className="text-xs text-ink-3">{sampleOutstanding ? "Sample required" : candidate.currentCondition?.replaceAll("_", " ") || "Untouched"}</span></button>; })}</div></div></div>}
+  const photoBanner = building.photoMessage ? (
+    <div className="mb-4 rounded-xl bg-[#fdecec] px-4 py-3 text-center text-sm font-bold tracking-wide text-[#b42318]">
+      {building.photoMessage}
+    </div>
+  ) : null;
 
-      {building.photoMessage && (
-        <div className="mb-4 rounded-xl bg-[#fdecec] px-4 py-3 text-center text-sm font-bold tracking-wide text-[#b42318]">
-          {building.photoMessage}
-        </div>
-      )}
+  // ---------------------------------------------------------------- item view
+  if (openItem) {
+    const item = openItem;
+    const needsPhoto =
+      ["damaged", "significantly_damaged", "needs_repair"].includes(item.currentCondition || "") &&
+      building.photoPolicy !== "prohibited";
+    const needsSample = sampleOutstanding(item);
+    return (
+      <div className="mx-auto max-w-3xl pb-16">
+        {header}
+        {photoBanner}
+        <button className="btn btn-ghost mb-4" onClick={() => setOpenItemId(null)}>
+          &larr; Back to {item.room?.trim() || "room"}
+        </button>
 
-      <div className="mb-4">
-        <div className="mb-1 flex justify-between text-xs text-ink-3">
-          <span>{done} of {local.length} inspected</span>
-          <span>{pct}% · {saved || (pending ? "Saving…" : "Idle")}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-paper-3">
-          <div className="h-full bg-gradient-to-r from-teal to-teal-glow" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-
-      <div className="panel rounded-3xl p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="mono-id text-teal-dim">{item.code}</div>
-            <div className="font-display text-2xl font-semibold leading-tight">{item.material}</div>
-            <div className="mt-1 text-sm text-ink-3">{item.floor} · {item.room} · {item.location}</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <AcmChip value={item.acm} />
-              <span className="chip chip-muted">{item.qty} {item.unit}</span>
-              {item.previousCondition && <span className="text-xs text-ink-3">Previously <ConditionChip value={item.previousCondition} /></span>}
-              {item.previousCondition && <button className="btn btn-ghost text-xs" onClick={() => patch({ currentCondition: item.previousCondition, inspected: true })}>✓ Same</button>}
+        <div className="panel rounded-3xl p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="mono-id text-teal-dim">{item.code}</div>
+              <div className="font-display text-2xl font-semibold leading-tight">{item.material}</div>
+              <div className="mt-1 text-sm text-ink-3">
+                {item.floor} &middot; {item.room} &middot; {item.location}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <AcmChip value={item.acm} />
+                <span className="chip chip-muted">
+                  {item.qty} {item.unit}
+                </span>
+                {item.previousCondition && (
+                  <span className="text-xs text-ink-3">
+                    Previously <ConditionChip value={item.previousCondition} />
+                  </span>
+                )}
+              </div>
             </div>
+            {item.photo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={fileUrl(item.photo)} alt="" className="h-28 w-36 rounded-xl object-cover" />
+            )}
           </div>
-          {item.photo && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={fileUrl(item.photo)} alt="" className="h-28 w-36 rounded-xl object-cover" />
+
+          <ConditionPicker item={item} onPick={(id) => patch(item, { currentCondition: id, inspected: true })} />
+
+          {item.currentCondition && item.previousCondition && item.currentCondition !== item.previousCondition && (
+            <div className="mt-3 rounded-xl bg-[#fff4e0] px-3 py-2 text-sm text-status-attention">
+              {item.previousCondition.replaceAll("_", " ")} &rarr; {item.currentCondition.replaceAll("_", " ")}
+              {["damaged", "significantly_damaged", "needs_repair"].includes(item.currentCondition) &&
+                " - repair will be suggested at submit"}
+            </div>
           )}
-        </div>
 
-        <div className="mt-6">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">Condition</div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            {CONDITIONS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => patch({ currentCondition: c.id, inspected: true })}
-                className={`btn btn-lg ${item.currentCondition === c.id ? "btn-primary" : "btn-ghost"}`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {item.currentCondition && item.previousCondition && item.currentCondition !== item.previousCondition && <div className="mt-3 rounded-xl bg-[#fff4e0] px-3 py-2 text-sm text-status-attention">{item.previousCondition.replaceAll("_", " ")} → {item.currentCondition.replaceAll("_", " ")}{["damaged", "significantly_damaged", "needs_repair"].includes(item.currentCondition) && " · repair will be suggested at submit"}</div>}
-
-        {needsSample && (
-          <div className={`mt-4 rounded-xl border p-4 ${item.sampleCollected ? "border-[#9bd0bc] bg-[#edf9f3]" : "border-[#efb3a8] bg-[#fff0ed]"}`}>
-            <div className={`font-semibold ${item.sampleCollected ? "text-[#176b4d]" : "text-[#a23725]"}`}>
-              {item.sampleCollected ? "Required field sample collected" : "Field sample required before this item is complete"}
-            </div>
-            <p className="mt-1 text-sm text-ink-3">This material is {item.acm === "pacm" ? "PACM" : "assumed ACM"} and its condition requires laboratory confirmation.</p>
-            {!item.sampleCollected && (
+          {needsSample && (
+            <div className="mt-4 rounded-xl border border-[#efb3a8] bg-[#fff0ed] p-4">
+              <div className="font-semibold text-[#a23725]">Field sample required before this item is complete</div>
+              <p className="mt-1 text-sm text-ink-3">
+                This material is {item.acm === "pacm" ? "PACM" : "assumed ACM"} and its condition requires laboratory
+                confirmation.
+              </p>
               <button
                 className="btn btn-primary mt-3"
                 disabled={samplePending || pending}
@@ -186,7 +277,9 @@ export function FieldInspection({
                   setSampleMessage("");
                   try {
                     const result = await collectInspectionItemSample(item.id);
-                    setLocal((values) => values.map((value) => value.id === item.id ? { ...value, sampleCollected: true } : value));
+                    setLocal((values) =>
+                      values.map((value) => (value.id === item.id ? { ...value, sampleCollected: true } : value))
+                    );
                     setSampleMessage(`Sample ${result.sampleNumber} recorded and linked.`);
                   } catch (error) {
                     setSampleMessage(error instanceof Error ? error.message : "Could not record the sample.");
@@ -195,63 +288,225 @@ export function FieldInspection({
                   }
                 }}
               >
-                {samplePending ? "Recording sample…" : "Collect required sample"}
+                {samplePending ? "Recording sample..." : "Collect required sample"}
               </button>
-            )}
-            {sampleMessage && <div role="status" className="mt-2 text-sm font-medium">{sampleMessage}</div>}
-          </div>
-        )}
+              {sampleMessage && (
+                <div role="status" className="mt-2 text-sm font-medium">
+                  {sampleMessage}
+                </div>
+              )}
+            </div>
+          )}
+          {!needsSample && item.sampleCollected && (
+            <div className="mt-4 rounded-xl border border-[#9bd0bc] bg-[#edf9f3] p-4">
+              <div className="font-semibold text-[#176b4d]">Required field sample collected</div>
+            </div>
+          )}
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <label className="field"><span>Qty observed</span><input type="number" value={item.quantityObserved ?? ""} onChange={(e) => patch({ quantityObserved: e.target.value ? Number(e.target.value) : null })} /></label>
-          <label className="field"><span>Removed quantity</span><input type="number" disabled={!item.materialRemoved} value={item.removedQuantity ?? ""} onChange={(e) => patch({ removedQuantity: e.target.value ? Number(e.target.value) : null })} /></label>
-          <label className="field"><span>Removed</span><select value={item.materialRemoved ? "yes" : "no"} onChange={(e) => patch({ materialRemoved: e.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select></label>
-        </div>
-
-        <div className="mt-6">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">Labeling</div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            {LABELS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => patch({ currentLabel: c.id })}
-                className={`btn btn-lg ${item.currentLabel === c.id ? "btn-primary" : "btn-ghost"}`}
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <label className="field">
+              <span>Qty observed</span>
+              <input
+                type="number"
+                value={item.quantityObserved ?? ""}
+                onChange={(e) => patch(item, { quantityObserved: e.target.value ? Number(e.target.value) : null })}
+              />
+            </label>
+            <label className="field">
+              <span>Removed quantity</span>
+              <input
+                type="number"
+                disabled={!item.materialRemoved}
+                value={item.removedQuantity ?? ""}
+                onChange={(e) => patch(item, { removedQuantity: e.target.value ? Number(e.target.value) : null })}
+              />
+            </label>
+            <label className="field">
+              <span>Removed</span>
+              <select
+                value={item.materialRemoved ? "yes" : "no"}
+                onChange={(e) => patch(item, { materialRemoved: e.target.value === "yes" })}
               >
-                {c.label}
-              </button>
-            ))}
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
           </div>
-        </div>
 
-        <div className="field mt-6">
-          <label>Notes</label>
-          <textarea
-            rows={3}
-            value={item.notes ?? ""}
-            onChange={(e) => patch({ notes: e.target.value })}
-            placeholder="Field observations"
-          />
-        </div>
+          <LabelPicker item={item} onPick={(id) => patch(item, { currentLabel: id })} />
 
-        {needsPhoto && (
-          <div className="mt-4 rounded-xl border border-[#f0d29a] bg-[#fff4e0] p-3">
-            <div className="mb-2 text-sm font-semibold text-[#9a5808]">Photograph required for this condition change</div>
-            <PhotoUpload buildingId={building.id} recordType="inventory" recordId={item.inventoryId} />
+          <div className="field mt-6">
+            <label>Notes</label>
+            <textarea
+              rows={3}
+              value={item.notes ?? ""}
+              onChange={(e) => patch(item, { notes: e.target.value })}
+              placeholder="Field observations"
+            />
           </div>
-        )}
-        {!needsPhoto && building.photoPolicy !== "prohibited" && (
-          <div className="mt-4">
-            <PhotoUpload buildingId={building.id} recordType="inventory" recordId={item.inventoryId} />
-          </div>
-        )}
 
-        <div className="mt-6 flex gap-2">
-          <button className="btn btn-ghost flex-1 btn-lg" disabled={idx === 0} onClick={() => setIdx((i) => i - 1)}>Previous</button>
-          <button className="btn btn-primary flex-1 btn-lg" disabled={idx >= local.length - 1} onClick={() => setIdx((i) => i + 1)}>
-            Next material
+          {needsPhoto && (
+            <div className="mt-4 rounded-xl border border-[#f0d29a] bg-[#fff4e0] p-3">
+              <div className="mb-2 text-sm font-semibold text-[#9a5808]">Photograph required for this condition change</div>
+              <PhotoUpload buildingId={building.id} recordType="inventory" recordId={item.inventoryId} />
+            </div>
+          )}
+          {!needsPhoto && building.photoPolicy !== "prohibited" && (
+            <div className="mt-4">
+              <PhotoUpload buildingId={building.id} recordType="inventory" recordId={item.inventoryId} />
+            </div>
+          )}
+
+          <button className="btn btn-primary btn-lg mt-6 w-full" onClick={() => setOpenItemId(null)}>
+            Done with this material
           </button>
         </div>
       </div>
+    );
+  }
+
+  // ---------------------------------------------------------------- room view
+  if (activeRoom) {
+    const status = roomStatus(activeRoom);
+    return (
+      <div className="mx-auto max-w-3xl pb-16">
+        {header}
+        {photoBanner}
+        <button className="btn btn-ghost mb-4" onClick={() => setRoomKey(null)}>
+          &larr; All rooms
+        </button>
+
+        <div className="mb-4">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-ink-3">{activeRoom.floor}</div>
+          <h2 className="font-display text-2xl font-semibold">{activeRoom.room}</h2>
+          <div className="mt-1 text-sm text-ink-3">
+            {status.done} of {status.total} inspected
+            {status.pendingSamples > 0 &&
+              ` - ${status.pendingSamples} sample${status.pendingSamples === 1 ? "" : "s"} outstanding`}
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {activeRoom.items.map((item) => (
+            <div
+              key={item.id}
+              className={cn(
+                "panel rounded-2xl border p-4",
+                itemComplete(item) ? "border-[#b7e4c7]" : "border-[rgba(16,36,72,0.1)]"
+              )}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="mono-id text-teal-dim">{item.code}</div>
+                  <div className="font-display text-lg font-semibold leading-tight">{item.material}</div>
+                  {item.location && <div className="mt-0.5 text-xs text-ink-3">{item.location}</div>}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <AcmChip value={item.acm} />
+                  {itemComplete(item) && <span className="chip chip-ok">Done</span>}
+                </div>
+              </div>
+
+              {item.previousCondition && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
+                  <span>Previously</span>
+                  <ConditionChip value={item.previousCondition} />
+                  <button
+                    className="btn btn-ghost text-xs"
+                    onClick={() => patch(item, { currentCondition: item.previousCondition, inspected: true })}
+                  >
+                    Same as last
+                  </button>
+                </div>
+              )}
+
+              <ConditionPicker item={item} compact onPick={(id) => patch(item, { currentCondition: id, inspected: true })} />
+              <LabelPicker item={item} compact onPick={(id) => patch(item, { currentLabel: id })} />
+
+              {sampleOutstanding(item) && (
+                <div className="mt-3 rounded-lg border border-[#efb3a8] bg-[#fff0ed] px-3 py-2 text-xs font-semibold text-[#a23725]">
+                  Field sample required - open this material to record it
+                </div>
+              )}
+
+              <button className="btn btn-ghost mt-3 w-full text-xs" onClick={() => setOpenItemId(item.id)}>
+                Open material - qty, notes, photo{sampleOutstanding(item) ? ", sample" : ""}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button className="btn btn-primary btn-lg mt-6 w-full" onClick={() => setRoomKey(null)}>
+          {status.complete ? "Room complete - back to rooms" : "Back to rooms"}
+        </button>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------------- rooms view
+  return (
+    <div className="mx-auto max-w-3xl pb-16">
+      {header}
+      {photoBanner}
+
+      <div className="mb-4">
+        <div className="mb-1 flex justify-between text-xs text-ink-3">
+          <span>
+            {done} of {local.length} inspected
+          </span>
+          <span>
+            {pct}% &middot; {saved || (pending ? "Saving..." : "Idle")}
+          </span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-paper-3">
+          <div className="h-full bg-gradient-to-r from-teal to-teal-glow" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      <input
+        className="mb-4 w-full"
+        placeholder="Search room, material, or code"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {visibleRooms.map((room) => {
+          const status = roomStatus(room);
+          return (
+            <button
+              key={room.key}
+              onClick={() => setRoomKey(room.key)}
+              className={cn(
+                "rounded-2xl border p-4 text-left transition hover:shadow-sm",
+                ROOM_CARD[status.tone] ?? ROOM_CARD.untouched
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-ink-3">{room.floor}</div>
+                  <div className="truncate font-display text-lg font-semibold">{room.room}</div>
+                </div>
+                <span
+                  className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", ROOM_DOT[status.tone] ?? ROOM_DOT.untouched)}
+                />
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="font-mono text-sm">
+                  {status.done}/{status.total} inspected
+                </span>
+                {status.complete && status.worst ? <ConditionChip value={status.worst} /> : null}
+              </div>
+              {status.pendingSamples > 0 && (
+                <div className="mt-2 text-xs font-semibold text-[#a23725]">
+                  {status.pendingSamples} sample{status.pendingSamples === 1 ? "" : "s"} outstanding
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {!visibleRooms.length && <div className="panel rounded-2xl p-5 text-sm text-ink-3">No rooms match that search.</div>}
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <div className="panel rounded-2xl p-4">
@@ -259,9 +514,47 @@ export function FieldInspection({
           <NewMaterialInline buildingId={building.id} inspectionId={inspectionId} />
         </div>
         <div className="panel rounded-2xl p-4">
-          <div className="mb-2 font-display font-semibold">Sign & submit</div>
+          <div className="mb-2 font-display font-semibold">Sign &amp; submit</div>
           <SubmitInspectionForm inspectionId={inspectionId} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ConditionPicker({ item, onPick, compact }: { item: Item; onPick: (id: string) => void; compact?: boolean }) {
+  return (
+    <div className={compact ? "mt-3" : "mt-6"}>
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">Condition</div>
+      <div className={cn("grid gap-2", compact ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 md:grid-cols-4")}>
+        {CONDITIONS.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={cn(compact ? "btn text-xs" : "btn btn-lg", item.currentCondition === c.id ? "btn-primary" : "btn-ghost")}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LabelPicker({ item, onPick, compact }: { item: Item; onPick: (id: string) => void; compact?: boolean }) {
+  return (
+    <div className={compact ? "mt-3" : "mt-6"}>
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">Labeling</div>
+      <div className={cn("grid gap-2", compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 md:grid-cols-4")}>
+        {LABELS.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={cn(compact ? "btn text-xs" : "btn btn-lg", item.currentLabel === c.id ? "btn-primary" : "btn-ghost")}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
     </div>
   );

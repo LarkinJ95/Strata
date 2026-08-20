@@ -103,7 +103,10 @@ export async function saveInspectionItem(input: {
   const user = await actor();
   const existing = await db.inspectionItem.findUnique({ where: { id: input.itemId }, include: { inspection: { include: { building: true } }, inventoryItem: true } });
   if (!existing || existing.inspection.organizationId !== user.organizationId) throw new Error("Inspection item not found");
-  const photoRequired = existing.inspection.building.photoPolicy !== "prohibited" && ["damaged", "significantly_damaged", "needs_repair", "removed"].includes(input.currentCondition || "");
+  // A removed material has nothing remaining to photograph. Keep the photo
+  // requirement for conditions where the material is still present and its
+  // condition needs visual evidence.
+  const photoRequired = existing.inspection.building.photoPolicy !== "prohibited" && ["damaged", "significantly_damaged", "needs_repair"].includes(input.currentCondition || "");
   const photoSinceStart = photoRequired ? await db.photoLink.findFirst({ where: { inventoryItemId: existing.inventoryItemId, photo: { uploadedAt: { gte: existing.inspection.startedAt ?? existing.inspection.createdAt } } }, select: { id: true } }) : null;
   const sampleRequired = requiresFieldSample(existing.inventoryItem.acmClassification, input.currentCondition);
   const sampleSinceStart = sampleRequired ? await db.sampleInventoryLink.findFirst({ where: { inventoryItemId: existing.inventoryItemId, sample: { collectionDate: { gte: existing.inspection.startedAt ?? existing.inspection.createdAt } } }, select: { id: true } }) : null;
