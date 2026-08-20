@@ -8,6 +8,8 @@ import { BuildingEditor, ClientEditor, FacilityEditor } from "@/components/forms
 
 export const dynamic = "force-dynamic";
 
+const buildingNumberCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getSession();
@@ -17,11 +19,12 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
     include: {
       facilities: {
         orderBy: { facilityId: "asc" },
-        include: { buildings: { orderBy: { buildingNumber: "asc" } } },
+        include: { buildings: true },
       },
     },
   });
   if (!client) notFound();
+  client.facilities.forEach((facility) => facility.buildings.sort((left, right) => buildingNumberCollator.compare(left.buildingNumber, right.buildingNumber)));
 
   return (
     <div>
