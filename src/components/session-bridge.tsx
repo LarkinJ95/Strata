@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { persistSession, readStoredSession, withAccess } from "@/lib/session-client";
+import { hasSessionCookie, persistSession, readStoredSession, withAccess } from "@/lib/session-client";
 
 export function SessionBridge() {
   useEffect(() => {
@@ -10,7 +10,11 @@ export function SessionBridge() {
     const token = fromUrl || readStoredSession();
     if (token) persistSession(token);
 
+    // Cookies reach the server on their own; intercepting would only downgrade
+    // client-side routing to full page loads. Re-checked per click because the
+    // cookie can be written after mount.
     function onClick(e: MouseEvent) {
+      if (hasSessionCookie()) return;
       const t = readStoredSession();
       if (!t) return;
       const a = (e.target as HTMLElement | null)?.closest?.("a");

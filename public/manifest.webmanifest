@@ -1,0 +1,16 @@
+{
+  "name": "STRATA Asbestos Compliance",
+  "short_name": "STRATA",
+  "description": "Permanent asbestos records for every building.",
+  "start_url": "/inspections",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5fa",
+  "theme_color": "#0b857f",
+  "icons": [
+    { "src": "/favicon-64.png", "sizes": "64x64", "type": "image/png" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

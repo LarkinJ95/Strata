@@ -88,6 +88,21 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
     ORDER BY ii."id" ASC
   `);
 
+  // Two flat queries rather than a nested include, for the same D1 parameter
+  // reason noted above. Both result sets are small.
+  const [plans, floors] = await Promise.all([
+    db.floorPlan.findMany({
+      where: { buildingId: insp.buildingId, organizationId: user.organizationId },
+      select: { id: true, name: true, storageKey: true, mimeType: true, floorId: true },
+      orderBy: { name: "asc" },
+    }),
+    db.buildingFloor.findMany({
+      where: { buildingId: insp.buildingId },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const floorNames = new Map(floors.map((floor) => [floor.id, floor.name]));
+
   return (
     <FieldInspection
       inspectionId={insp.id}
@@ -100,6 +115,13 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         client: insp.building.client.name,
       }}
       completion={insp.completionPct}
+      floorPlans={plans.map((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        storageKey: plan.storageKey,
+        mimeType: plan.mimeType,
+        floor: plan.floorId ? floorNames.get(plan.floorId) ?? null : null,
+      }))}
       items={items.map((item) => ({ ...item, materialRemoved: Boolean(item.materialRemoved), inspected: Boolean(item.inspected), sampleCollected: Boolean(item.sampleCollected) }))}
     />
   );

@@ -40,6 +40,23 @@ export function readStoredSession() {
   }
 }
 
+/**
+ * `getSession` reads `strata_client` from the cookie jar, so whenever that
+ * cookie is actually present the server already has the session and links need
+ * no `?access=` token. Rewriting them anyway costs a full document load per
+ * navigation and puts the token in history, logs, and Referer headers.
+ *
+ * Embedded/partitioned contexts silently drop the cookie; only there is the
+ * URL fallback worth its cost.
+ */
+export function hasSessionCookie() {
+  try {
+    return document.cookie.split("; ").some((entry) => entry.startsWith("strata_client="));
+  } catch {
+    return false;
+  }
+}
+
 export function withAccess(href: string, token?: string | null) {
   const t = token ?? readStoredSession();
   if (!t) return href;

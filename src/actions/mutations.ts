@@ -950,6 +950,24 @@ export async function uploadPhoto(formData: FormData) {
 
   const storageKey = await putUpload({ organizationId: user.organizationId, category: "photos", file });
 
+  // Provenance for a photograph that may end up supporting a regulatory
+  // finding: where it was taken, when the shutter actually fired, and the
+  // frame size. Each is optional — a browser that withholds location, or a
+  // desktop upload with no coordinates, still stores the photograph.
+  const numeric = (value: FormDataEntryValue | null) => {
+    if (value === null) return null;
+    const parsed = Number(String(value));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const latitude = numeric(formData.get("latitude"));
+  const longitude = numeric(formData.get("longitude"));
+  const width = numeric(formData.get("width"));
+  const height = numeric(formData.get("height"));
+  const capturedAtRaw = String(formData.get("capturedAt") || "");
+  const capturedAtParsed = capturedAtRaw ? new Date(capturedAtRaw) : null;
+  const capturedAt =
+    capturedAtParsed && !Number.isNaN(capturedAtParsed.getTime()) ? capturedAtParsed : new Date();
+
   const photo = await db.photo.create({
     data: {
       organizationId: user.organizationId,
@@ -959,7 +977,11 @@ export async function uploadPhoto(formData: FormData) {
       originalFilename: file.name,
       mimeType: file.type || "application/octet-stream",
       size: file.size,
-      capturedAt: new Date(),
+      width: width !== null ? Math.round(width) : undefined,
+      height: height !== null ? Math.round(height) : undefined,
+      latitude: latitude ?? undefined,
+      longitude: longitude ?? undefined,
+      capturedAt,
       uploadedById: user.id,
       photographerId: user.id,
       visibility,
