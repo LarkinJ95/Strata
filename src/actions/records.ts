@@ -8,6 +8,7 @@ import { can } from "@/lib/auth";
 import { persistBuildingCompliance } from "@/lib/compliance";
 import { activity, audit } from "@/lib/audit";
 import { deleteStoredObject } from "@/lib/storage";
+import { REPORT_FORM_OPTIONS } from "@/lib/report-forms";
 
 async function actor(form: FormData) {
   const user = await sessionFromToken(String(form.get("access") || ""));
@@ -120,12 +121,14 @@ export async function saveBuilding(form: FormData) {
     buildingUse: str(form, "buildingUse") || null,
     occupancyStatus: str(form, "occupancyStatus") || "occupied",
     photoPolicy: str(form, "photoPolicy") || "permitted",
+    reportFormOverride: str(form, "reportFormOverride") || null,
     surveyStatus: str(form, "surveyStatus") || "complete",
     managementPlanStatus: str(form, "managementPlanStatus") || "current",
     notes: str(form, "notes") || null,
     lastInspectionAt: dateOrNull(form, "lastInspectionAt"),
     nextInspectionAt: dateOrNull(form, "nextInspectionAt"),
   };
+  if (data.reportFormOverride && !REPORT_FORM_OPTIONS.some((option) => option.value === data.reportFormOverride)) throw new Error("Invalid report form");
   if (!data.name || !data.buildingNumber) throw new Error("Name and building number are required");
 
   if (id) {

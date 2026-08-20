@@ -24,6 +24,7 @@ import {
 } from "@/actions/records";
 import { ConfirmDeleteButton } from "@/components/forms/confirm-delete-button";
 import { FunctionalAreaSelect } from "@/components/forms/functional-area-select";
+import { REPORT_FORM_OPTIONS } from "@/lib/report-forms";
 
 function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-3 md:grid-cols-2">{children}</div>;
@@ -153,6 +154,7 @@ export function BuildingEditor({
     buildingUse?: string | null;
     occupancyStatus: string;
     photoPolicy: string;
+    reportFormOverride?: string | null;
     surveyStatus: string;
     managementPlanStatus: string;
     notes?: string | null;
@@ -189,6 +191,12 @@ export function BuildingEditor({
               <option value="limited">Limited</option>
               <option value="approval_required">Approval required</option>
               <option value="prohibited">Prohibited</option>
+            </select>
+          </Field>
+          <Field label="Report form">
+            <select name="reportFormOverride" defaultValue={building?.reportFormOverride ?? ""}>
+              <option value="">Use client/facility default</option>
+              {REPORT_FORM_OPTIONS.map((form) => <option key={form.value} value={form.value}>{form.label}</option>)}
             </select>
           </Field>
           <Field label="Survey status"><input name="surveyStatus" defaultValue={building?.surveyStatus ?? "complete"} /></Field>

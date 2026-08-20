@@ -235,6 +235,7 @@ model Building {
   responsibleManagerId  String?
   managementPlanStatus  String    @default("current")
   photoPolicy           String    @default("permitted")
+  reportFormOverride    String?
   contacts              String?
   notes                 String?
   qrCode                String?
