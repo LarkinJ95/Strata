@@ -42,6 +42,7 @@ import {
   SampleEditor,
 } from "@/components/forms/entity-editors";
 import { cn } from "@/lib/utils";
+import { WorkRecordEditor } from "@/components/forms/work-record-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ const TABS = [
   { id: "spaces", label: "Spaces", icon: Building2 },
   { id: "ppe", label: "PPE", icon: Shield },
   { id: "repairs", label: "Repairs", icon: Wrench },
+  { id: "work", label: "Work", icon: Wrench },
   { id: "inspections", label: "Inspections", icon: ClipboardCheck },
   { id: "photos", label: "Photos", icon: Camera },
   { id: "documents", label: "Documents", icon: FileText },
@@ -64,7 +66,7 @@ const TAB_GROUPS = [
   { id: "overview", label: "Overview", tabs: ["overview"] },
   { id: "materials", label: "Materials", tabs: ["inventory", "samples", "paint"] },
   { id: "spaces", label: "Spaces", tabs: ["spaces"] },
-  { id: "program", label: "Program", tabs: ["inspections", "repairs", "ppe"] },
+  { id: "program", label: "Program", tabs: ["inspections", "repairs", "work", "ppe"] },
   { id: "records", label: "Records", tabs: ["photos", "documents", "plans"] },
   { id: "activity", label: "Activity", tabs: ["activity"] },
 ] as const;
@@ -92,13 +94,14 @@ export default async function BuildingPage({
     },
   });
   if (!buildingRecord || !assertBuildingAccess(user, buildingRecord)) notFound();
-  const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, samples, inspections, activities, documents, photos, floorPlans] = await Promise.all([
+  const [floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, workRecords, samples, inspections, activities, documents, photos, floorPlans] = await Promise.all([
     db.buildingFloor.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { level: "asc" }, include: { areas: true } }),
     db.buildingArea.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { name: "asc" }, include: { floor: { select: { name: true } } } }),
     db.paintSample.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { sampleNumber: "asc" } }),
     db.buildingPpe.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { item: "asc" } }),
     db.inventoryItem.findMany({ where: { buildingId: buildingRecord.id }, include: { functionalArea: { select: { id: true, name: true, faCode: true } }, sampleLinks: { select: { id: true } }, photoLinks: { select: { id: true } } }, orderBy: { inventoryCode: "asc" } }),
     db.repair.findMany({ where: { buildingId: buildingRecord.id }, include: { inventoryItem: true }, orderBy: { identifiedAt: "desc" } }),
+    db.workRecord.findMany({ where: { buildingId: buildingRecord.id }, include: { assignedUser: true, _count: { select: { items: true, documents: true } } }, orderBy: { createdAt: "desc" } }),
     db.sample.findMany({ where: { buildingId: buildingRecord.id }, include: { layers: { include: { result: true } } }, orderBy: { collectionDate: "desc" } }),
     db.inspection.findMany({ where: { buildingId: buildingRecord.id }, include: { inspector: true }, orderBy: { scheduledDate: "desc" } }),
     db.activityEvent.findMany({ where: { buildingId: buildingRecord.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 }),
@@ -106,7 +109,7 @@ export default async function BuildingPage({
     db.photo.findMany({ where: { buildingId: buildingRecord.id }, orderBy: { uploadedAt: "desc" } }),
     db.floorPlan.findMany({ where: { buildingId: buildingRecord.id }, include: { markers: true } }),
   ]);
-  const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, samples, inspections, activities, documents, photos, floorPlans };
+  const building = { ...buildingRecord, floors, areas, paintSamples, ppeRequirements, inventoryItems, repairs, workRecords, samples, inspections, activities, documents, photos, floorPlans };
 
   const laboratories = user.isClient ? [] : await db.laboratory.findMany({
     where: { organizationId: user.organizationId },
@@ -118,6 +121,8 @@ export default async function BuildingPage({
     select: { id: true, name: true, facilityId: true },
     orderBy: { facilityId: "asc" },
   });
+  const workAssignees = user.isClient ? [] : await db.user.findMany({ where: { organizationId: user.organizationId, status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const workContractors = user.isClient ? [] : await db.contractor.findMany({ where: { organizationId: user.organizationId }, select: { id: true, name: true }, orderBy: { name: "asc" } });
 
   const compliance = await evaluateBuilding(building.id);
   const items = building.inventoryItems;
@@ -507,6 +512,16 @@ export default async function BuildingPage({
                 {!user.isClient && <details className="mt-2"><summary className="btn btn-ghost cursor-pointer text-xs">Edit</summary><div className="mt-2"><RepairEditor repair={r} inventoryOptions={items} /></div></details>}
               </Panel>
             ))}
+          </div>
+        )}
+
+        {tab === "work" && (
+          <div className="space-y-3">
+            {!user.isClient && (["org_admin", "environmental_manager"].includes(user.roleSlug) || can(user, "work.create")) && <WorkRecordEditor buildingId={building.id} inventoryItems={items} assignees={workAssignees} contractors={workContractors} />}
+            {building.workRecords.map((work) => (
+              <Panel key={work.id} className="p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><Link href={`/work/${work.id}`} className="mono-id text-teal-dim">{work.workNumber}</Link><div className="font-medium">{work.title}</div><div className="text-xs text-ink-3">{work.workType} · {work.priority} · {work._count.items} materials{work.assignedUser ? ` · ${work.assignedUser.name}` : ""}</div></div><Chip tone={work.status === "completed" ? "ok" : "warn"}>{work.status.replaceAll("_", " ")}</Chip></div></Panel>
+            ))}
+            {!building.workRecords.length && <p className="text-sm text-ink-3">No work records have been created for this building.</p>}
           </div>
         )}
 

@@ -22,46 +22,47 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users           User[]
-  roles           Role[]
-  clients         Client[]
-  facilities      Facility[]
-  buildings       Building[]
-  inventoryItems  InventoryItem[]
-  samples         Sample[]
-  inspections     Inspection[]
-  repairs         Repair[]
-  removals        RemovalEvent[]
-  photos          Photo[]
-  documents       Document[]
-  laboratories    Laboratory[]
-  tasks           Task[]
-  notifications   Notification[]
-  auditEvents     AuditEvent[]
-  activities      ActivityEvent[]
-  savedViews      SavedView[]
+  users              User[]
+  roles              Role[]
+  clients            Client[]
+  facilities         Facility[]
+  buildings          Building[]
+  inventoryItems     InventoryItem[]
+  samples            Sample[]
+  inspections        Inspection[]
+  repairs            Repair[]
+  workRecords        WorkRecord[]
+  removals           RemovalEvent[]
+  photos             Photo[]
+  documents          Document[]
+  laboratories       Laboratory[]
+  tasks              Task[]
+  notifications      Notification[]
+  auditEvents        AuditEvent[]
+  activities         ActivityEvent[]
+  savedViews         SavedView[]
   regulatoryProfiles RegulatoryProfile[]
-  contractors     Contractor[]
-  chainsOfCustody ChainOfCustody[]
-  floorPlans      FloorPlan[]
-  signatures      Signature[]
-  reports         GeneratedReport[]
-  managementPlans ManagementPlan[]
-  acknowledgements ContractorAcknowledgement[]
-  importJobs      ImportJob[]
+  contractors        Contractor[]
+  chainsOfCustody    ChainOfCustody[]
+  floorPlans         FloorPlan[]
+  signatures         Signature[]
+  reports            GeneratedReport[]
+  managementPlans    ManagementPlan[]
+  acknowledgements   ContractorAcknowledgement[]
+  importJobs         ImportJob[]
   notifications_pref NotificationPreference[]
 }
 
 model Role {
-  id           String   @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
-  name         String
-  slug         String
-  description  String?
-  permissions  String   @default("[]")
-  isSystem     Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  name           String
+  slug           String
+  description    String?
+  permissions    String   @default("[]")
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   users        User[]
@@ -93,21 +94,24 @@ model User {
   client       Client?      @relation(fields: [clientId], references: [id])
   contractor   Contractor?  @relation(fields: [contractorId], references: [id])
 
-  assignedBuildings UserBuildingAccess[]
-  inspections       Inspection[]         @relation("Inspector")
-  samplesCollected  Sample[]             @relation("SampleCollector")
-  repairsAssigned   Repair[]             @relation("RepairAssignee")
-  tasksAssigned     Task[]               @relation("TaskAssignee")
-  tasksCreated      Task[]               @relation("TaskCreator")
-  notifications     Notification[]
-  auditEvents       AuditEvent[]
-  uploadedPhotos    Photo[]              @relation("PhotoUploader")
-  capturedPhotos    Photo[]              @relation("PhotoPhotographer")
-  uploadedDocuments Document[]           @relation("DocumentUploader")
-  signatures        Signature[]
-  savedViews        SavedView[]
-  activities        ActivityEvent[]
-  sessions          Session[]
+  assignedBuildings    UserBuildingAccess[]
+  inspections          Inspection[]         @relation("Inspector")
+  samplesCollected     Sample[]             @relation("SampleCollector")
+  repairsAssigned      Repair[]             @relation("RepairAssignee")
+  workRecordsCreated   WorkRecord[]         @relation("WorkRecordCreator")
+  workRecordsCompleted WorkRecord[]         @relation("WorkRecordCompleter")
+  workRecordsAssigned  WorkRecord[]         @relation("WorkRecordAssignee")
+  tasksAssigned        Task[]               @relation("TaskAssignee")
+  tasksCreated         Task[]               @relation("TaskCreator")
+  notifications        Notification[]
+  auditEvents          AuditEvent[]
+  uploadedPhotos       Photo[]              @relation("PhotoUploader")
+  capturedPhotos       Photo[]              @relation("PhotoPhotographer")
+  uploadedDocuments    Document[]           @relation("DocumentUploader")
+  signatures           Signature[]
+  savedViews           SavedView[]
+  activities           ActivityEvent[]
+  sessions             Session[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -126,7 +130,7 @@ model Session {
 }
 
 model UserBuildingAccess {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   buildingId String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -136,117 +140,119 @@ model UserBuildingAccess {
 }
 
 model Client {
-  id              String   @id @default(cuid())
-  organizationId  String
-  name            String
-  clientNumber    String
-  primaryContact  String?
-  primaryEmail    String?
-  primaryPhone    String?
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  clientNumber     String
+  primaryContact   String?
+  primaryEmail     String?
+  primaryPhone     String?
   secondaryContact String?
-  secondaryEmail  String?
-  secondaryPhone  String?
-  address         String?
-  city            String?
-  state           String?
-  postalCode      String?
-  logoPath        String?
-  notes           String?
-  contractInfo    String?
-  inspectionReqs  String?
-  reportingReqs   String?
-  documentReqs    String?
-  notifyPrefs     String?
-  photoPolicy     String   @default("permitted")
-  customFields    String   @default("{}")
-  status          String   @default("active")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  secondaryEmail   String?
+  secondaryPhone   String?
+  address          String?
+  city             String?
+  state            String?
+  postalCode       String?
+  logoPath         String?
+  notes            String?
+  contractInfo     String?
+  inspectionReqs   String?
+  reportingReqs    String?
+  documentReqs     String?
+  notifyPrefs      String?
+  photoPolicy      String   @default("permitted")
+  customFields     String   @default("{}")
+  status           String   @default("active")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  facilities   Facility[]
-  buildings    Building[]
-  users        User[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  facilities     Facility[]
+  buildings      Building[]
+  users          User[]
   inventoryItems InventoryItem[]
-  samples      Sample[]
-  inspections  Inspection[]
-  repairs      Repair[]
-  documents    Document[]
-  photos       Photo[]
-  tasks        Task[]
-  activities   ActivityEvent[]
+  samples        Sample[]
+  inspections    Inspection[]
+  repairs        Repair[]
+  workRecords    WorkRecord[]
+  documents      Document[]
+  photos         Photo[]
+  tasks          Task[]
+  activities     ActivityEvent[]
 
   @@unique([organizationId, clientNumber])
   @@index([organizationId])
 }
 
 model Facility {
-  id                 String   @id @default(cuid())
-  organizationId     String
-  clientId           String
-  name               String
-  facilityId         String
-  address            String?
-  city               String?
-  state              String?
-  postalCode         String?
-  latitude           Float?
-  longitude          Float?
-  primaryContact     String?
+  id                   String   @id @default(cuid())
+  organizationId       String
+  clientId             String
+  name                 String
+  facilityId           String
+  address              String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  latitude             Float?
+  longitude            Float?
+  primaryContact       String?
   environmentalContact String?
-  emergencyContact   String?
-  notes              String?
-  photoPolicy        String?
-  status             String   @default("active")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  emergencyContact     String?
+  notes                String?
+  photoPolicy          String?
+  status               String   @default("active")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   buildings    Building[]
   documents    Document[]
+  workRecords  WorkRecord[]
 
   @@unique([organizationId, facilityId])
   @@index([organizationId, clientId])
 }
 
 model Building {
-  id                    String    @id @default(cuid())
-  organizationId        String
-  clientId              String
-  facilityId            String
-  name                  String
-  buildingNumber        String
-  address               String?
-  latitude              Float?
-  longitude             Float?
-  yearConstructed       Int?
-  squareFootage         Int?
-  floorsCount           Int?
-  buildingUse           String?
-  occupancyStatus       String    @default("occupied")
-  activeStatus          String    @default("active")
-  renovationHistory     String?
-  demolitionStatus      String    @default("none")
-  surveyStatus          String    @default("complete")
-  lastInspectionAt      DateTime?
-  nextInspectionAt      DateTime?
-  inspectionIntervalDays Int      @default(365)
-  responsibleManagerId  String?
-  managementPlanStatus  String    @default("current")
-  photoPolicy           String    @default("permitted")
-  reportFormOverride    String?
-  contacts              String?
-  notes                 String?
-  qrCode                String?
-  complianceStatus      String    @default("attention")
-  complianceReasons     String    @default("[]")
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  organizationId         String
+  clientId               String
+  facilityId             String
+  name                   String
+  buildingNumber         String
+  address                String?
+  latitude               Float?
+  longitude              Float?
+  yearConstructed        Int?
+  squareFootage          Int?
+  floorsCount            Int?
+  buildingUse            String?
+  occupancyStatus        String    @default("occupied")
+  activeStatus           String    @default("active")
+  renovationHistory      String?
+  demolitionStatus       String    @default("none")
+  surveyStatus           String    @default("complete")
+  lastInspectionAt       DateTime?
+  nextInspectionAt       DateTime?
+  inspectionIntervalDays Int       @default(365)
+  responsibleManagerId   String?
+  managementPlanStatus   String    @default("current")
+  photoPolicy            String    @default("permitted")
+  reportFormOverride     String?
+  contacts               String?
+  notes                  String?
+  qrCode                 String?
+  complianceStatus       String    @default("attention")
+  complianceReasons      String    @default("[]")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  facility         Facility          @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client                      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  facility         Facility                    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   floors           BuildingFloor[]
   areas            BuildingArea[]
   homogeneousAreas HomogeneousArea[]
@@ -254,6 +260,7 @@ model Building {
   samples          Sample[]
   inspections      Inspection[]
   repairs          Repair[]
+  workRecords      WorkRecord[]
   removals         RemovalEvent[]
   photos           Photo[]
   documents        Document[]
@@ -273,28 +280,28 @@ model Building {
 }
 
 model BuildingFloor {
-  id         String  @id @default(cuid())
-  buildingId String
-  name       String
-  level      Int
-  notes      String?
-  qrCode     String?
+  id            String         @id @default(cuid())
+  buildingId    String
+  name          String
+  level         Int
+  notes         String?
+  qrCode        String?
   squareFootage Int?
-  occupancy  String?
-  building   Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  areas      BuildingArea[]
-  floorPlans FloorPlan[]
-  paintSamples PaintSample[]
+  occupancy     String?
+  building      Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  areas         BuildingArea[]
+  floorPlans    FloorPlan[]
+  paintSamples  PaintSample[]
 
   @@index([buildingId])
 }
 
 model ManagementPlan {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   organizationId      String
   buildingId          String
-  revision            Int      @default(1)
-  status              String   @default("draft")
+  revision            Int       @default(1)
+  status              String    @default("draft")
   effectiveDate       DateTime?
   reviewDueDate       DateTime?
   preparedBy          String?
@@ -306,8 +313,8 @@ model ManagementPlan {
   trainingNotes       String?
   notificationNotes   String?
   additionalNotes     String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
@@ -318,18 +325,18 @@ model ManagementPlan {
 }
 
 model BuildingArea {
-  id         String  @id @default(cuid())
-  buildingId String
-  floorId    String?
-  faCode     String?
-  name       String
-  areaType   String?
+  id             String          @id @default(cuid())
+  buildingId     String
+  floorId        String?
+  faCode         String?
+  name           String
+  areaType       String?
   useDescription String?
-  qrCode     String?
-  notes      String?
-  building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  floor      BuildingFloor? @relation(fields: [floorId], references: [id])
-  paintSamples PaintSample[]
+  qrCode         String?
+  notes          String?
+  building       Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor          BuildingFloor?  @relation(fields: [floorId], references: [id])
+  paintSamples   PaintSample[]
   inventoryItems InventoryItem[] @relation("InventoryFunctionalArea")
 
   @@index([buildingId])
@@ -370,33 +377,33 @@ model PaintSample {
 }
 
 model BuildingPpe {
-  id          String  @id @default(cuid())
-  buildingId  String
-  item        String
-  required    Boolean @default(true)
-  appliesTo   String?
-  notes       String?
-  building    Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  buildingId String
+  item       String
+  required   Boolean  @default(true)
+  appliesTo  String?
+  notes      String?
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   @@index([buildingId])
 }
 
 model HomogeneousArea {
-  id              String   @id @default(cuid())
-  organizationId  String
-  buildingId      String
-  haCode          String
-  material        String
+  id                  String   @id @default(cuid())
+  organizationId      String
+  buildingId          String
+  haCode              String
+  material            String
   materialDescription String?
-  floors          String?
-  rooms           String?
-  determination   String   @default("unknown")
-  quantity        Float?
-  quantityUnit    String?
-  condition       String?
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  floors              String?
+  rooms               String?
+  determination       String   @default("unknown")
+  quantity            Float?
+  quantityUnit        String?
+  condition           String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   building       Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   inventoryItems InventoryItem[]
@@ -454,17 +461,18 @@ model InventoryItem {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client           Client       @relation(fields: [clientId], references: [id])
-  building         Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  homogeneousArea  HomogeneousArea? @relation(fields: [homogeneousAreaId], references: [id])
-  functionalArea   BuildingArea? @relation("InventoryFunctionalArea", fields: [functionalAreaId], references: [id], onDelete: SetNull)
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client                      @relation(fields: [clientId], references: [id])
+  building         Building                    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  homogeneousArea  HomogeneousArea?            @relation(fields: [homogeneousAreaId], references: [id])
+  functionalArea   BuildingArea?               @relation("InventoryFunctionalArea", fields: [functionalAreaId], references: [id], onDelete: SetNull)
   quantityHistory  InventoryQuantityHistory[]
   conditionHistory InventoryConditionHistory[]
   labelHistory     InventoryLabelHistory[]
   sampleLinks      SampleInventoryLink[]
   inspectionItems  InspectionItem[]
   repairs          Repair[]
+  workRecords      WorkRecordItem[]
   removals         RemovalEvent[]
   photoLinks       PhotoLink[]
   documents        Document[]
@@ -499,14 +507,14 @@ model InventoryQuantityHistory {
 }
 
 model InventoryConditionHistory {
-  id              String   @id @default(cuid())
-  inventoryItemId String
+  id                String   @id @default(cuid())
+  inventoryItemId   String
   previousCondition String?
-  newCondition    String
-  inspectionId    String?
-  inspectorId     String?
-  notes           String?
-  changedAt       DateTime @default(now())
+  newCondition      String
+  inspectionId      String?
+  inspectorId       String?
+  notes             String?
+  changedAt         DateTime @default(now())
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
@@ -532,7 +540,7 @@ model InventoryLabelHistory {
 }
 
 model Laboratory {
-  id             String  @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
   name           String
   accreditation  String?
@@ -540,49 +548,49 @@ model Laboratory {
   phone          String?
   email          String?
   notes          String?
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   samples        Sample[]
   chains         ChainOfCustody[]
 }
 
 model Sample {
-  id                   String    @id @default(cuid())
-  organizationId       String
-  clientId             String
-  buildingId           String
-  homogeneousAreaId    String?
-  sampleNumber         String
-  clientSampleNumber   String?
-  floor                String?
-  room                 String?
-  location             String?
-  material             String
-  materialDescription  String?
-  collectionDate       DateTime
-  collectionTime       String?
-  inspectorId          String?
-  samplingMethod       String?
-  notes                String?
-  laboratoryId         String?
-  labSampleNumber      String?
-  analysisMethod       String?
-  dateReceived         DateTime?
-  dateAnalyzed         DateTime?
-  dateResultsReceived  DateTime?
-  status               String    @default("collected")
-  cocId                String?
-  latitude             Float?
-  longitude            Float?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  organizationId      String
+  clientId            String
+  buildingId          String
+  homogeneousAreaId   String?
+  sampleNumber        String
+  clientSampleNumber  String?
+  floor               String?
+  room                String?
+  location            String?
+  material            String
+  materialDescription String?
+  collectionDate      DateTime
+  collectionTime      String?
+  inspectorId         String?
+  samplingMethod      String?
+  notes               String?
+  laboratoryId        String?
+  labSampleNumber     String?
+  analysisMethod      String?
+  dateReceived        DateTime?
+  dateAnalyzed        DateTime?
+  dateResultsReceived DateTime?
+  status              String    @default("collected")
+  cocId               String?
+  latitude            Float?
+  longitude           Float?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client          Client           @relation(fields: [clientId], references: [id])
-  building        Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  homogeneousArea HomogeneousArea? @relation(fields: [homogeneousAreaId], references: [id])
-  inspector       User?            @relation("SampleCollector", fields: [inspectorId], references: [id])
-  laboratory      Laboratory?      @relation(fields: [laboratoryId], references: [id])
-  chainOfCustody  ChainOfCustody?  @relation(fields: [cocId], references: [id])
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client          Client                @relation(fields: [clientId], references: [id])
+  building        Building              @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  homogeneousArea HomogeneousArea?      @relation(fields: [homogeneousAreaId], references: [id])
+  inspector       User?                 @relation("SampleCollector", fields: [inspectorId], references: [id])
+  laboratory      Laboratory?           @relation(fields: [laboratoryId], references: [id])
+  chainOfCustody  ChainOfCustody?       @relation(fields: [cocId], references: [id])
   layers          SampleLayer[]
   inventoryLinks  SampleInventoryLink[]
   photoLinks      PhotoLink[]
@@ -595,18 +603,18 @@ model Sample {
 }
 
 model SampleLayer {
-  id              String  @id @default(cuid())
-  sampleId        String
-  layerNumber     Int
-  description     String
+  id               String        @id @default(cuid())
+  sampleId         String
+  layerNumber      Int
+  description      String
   asbestosDetected Boolean?
-  asbestosPercent Float?
-  fiberTypes      String  @default("[]")
-  classification  String?
-  comments        String?
-  detectionLimit  String?
-  sample          Sample  @relation(fields: [sampleId], references: [id], onDelete: Cascade)
-  result          SampleResult?
+  asbestosPercent  Float?
+  fiberTypes       String        @default("[]")
+  classification   String?
+  comments         String?
+  detectionLimit   String?
+  sample           Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  result           SampleResult?
 
   @@unique([sampleId, layerNumber])
 }
@@ -645,22 +653,22 @@ model SampleInventoryLink {
 }
 
 model ChainOfCustody {
-  id             String    @id @default(cuid())
-  organizationId String
-  buildingId     String?
-  projectName    String?
-  inspectorId    String?
-  laboratoryId   String?
+  id                String    @id @default(cuid())
+  organizationId    String
+  buildingId        String?
+  projectName       String?
+  inspectorId       String?
+  laboratoryId      String?
   analysisRequested String?
-  relinquishedBy String?
-  relinquishedAt DateTime?
-  receivedBy     String?
-  receivedAt     DateTime?
-  shippingMethod String?
-  trackingNumber String?
-  status         String    @default("draft")
-  notes          String?
-  createdAt      DateTime  @default(now())
+  relinquishedBy    String?
+  relinquishedAt    DateTime?
+  receivedBy        String?
+  receivedAt        DateTime?
+  shippingMethod    String?
+  trackingNumber    String?
+  status            String    @default("draft")
+  notes             String?
+  createdAt         DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   building     Building?    @relation(fields: [buildingId], references: [id])
@@ -669,29 +677,29 @@ model ChainOfCustody {
 }
 
 model Inspection {
-  id             String    @id @default(cuid())
-  organizationId String
-  clientId       String
-  buildingId     String
-  inspectionType String
-  templateName   String?
-  scheduledDate  DateTime?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  inspectorId    String?
-  status         String    @default("scheduled")
+  id                   String    @id @default(cuid())
+  organizationId       String
+  clientId             String
+  buildingId           String
+  inspectionType       String
+  templateName         String?
+  scheduledDate        DateTime?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  inspectorId          String?
+  status               String    @default("scheduled")
   previousInspectionId String?
-  completionPct  Int       @default(0)
-  notes          String?
-  findings       String?
-  signedAt       DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  completionPct        Int       @default(0)
+  notes                String?
+  findings             String?
+  signedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       Client           @relation(fields: [clientId], references: [id])
-  building     Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  inspector    User?            @relation("Inspector", fields: [inspectorId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client            @relation(fields: [clientId], references: [id])
+  building     Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inspector    User?             @relation("Inspector", fields: [inspectorId], references: [id])
   items        InspectionItem[]
   discoveries  SuspectMaterial[]
   signatures   Signature[]
@@ -751,42 +759,42 @@ model SuspectMaterial {
 }
 
 model Repair {
-  id                 String    @id @default(cuid())
-  organizationId     String
-  clientId           String
-  buildingId         String
-  inventoryItemId    String
-  repairCode         String
-  problem            String
-  condition          String?
-  identifiedAt       DateTime  @default(now())
-  inspectorId        String?
-  priority           String    @default("medium")
-  recommendedResponse String?
+  id                   String    @id @default(cuid())
+  organizationId       String
+  clientId             String
+  buildingId           String
+  inventoryItemId      String
+  repairCode           String
+  problem              String
+  condition            String?
+  identifiedAt         DateTime  @default(now())
+  inspectorId          String?
+  priority             String    @default("medium")
+  recommendedResponse  String?
   assignedContractorId String?
-  assignedUserId     String?
-  workOrderNumber    String?
-  poNumber           String?
-  estimatedCost      Float?
-  scheduledDate      DateTime?
-  completionDate     DateTime?
-  completionNotes    String?
-  status             String    @default("open")
-  notes              String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  assignedUserId       String?
+  workOrderNumber      String?
+  poNumber             String?
+  estimatedCost        Float?
+  scheduledDate        DateTime?
+  completionDate       DateTime?
+  completionNotes      String?
+  status               String    @default("open")
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       Client       @relation(fields: [clientId], references: [id])
-  building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  assignedUser User?        @relation("RepairAssignee", fields: [assignedUserId], references: [id])
-  contractor   Contractor?  @relation(fields: [assignedContractorId], references: [id])
-  verification RepairVerification?
-  photoLinks   PhotoLink[]
-  documents    Document[]
-  activities   ActivityEvent[]
-  tasks        Task[]
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client        Client              @relation(fields: [clientId], references: [id])
+  building      Building            @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem       @relation(fields: [inventoryItemId], references: [id])
+  assignedUser  User?               @relation("RepairAssignee", fields: [assignedUserId], references: [id])
+  contractor    Contractor?         @relation(fields: [assignedContractorId], references: [id])
+  verification  RepairVerification?
+  photoLinks    PhotoLink[]
+  documents     Document[]
+  activities    ActivityEvent[]
+  tasks         Task[]
 
   @@unique([organizationId, repairCode])
   @@index([organizationId, buildingId])
@@ -794,43 +802,100 @@ model Repair {
 }
 
 model RepairVerification {
-  id              String   @id @default(cuid())
-  repairId        String   @unique
+  id               String   @id @default(cuid())
+  repairId         String   @unique
   verificationDate DateTime @default(now())
-  inspectorId     String?
-  satisfactory    Boolean
+  inspectorId      String?
+  satisfactory     Boolean
   updatedCondition String?
-  updatedQuantity Float?
-  labelStatus     String?
-  notes           String?
-  followUpRequired Boolean @default(false)
+  updatedQuantity  Float?
+  labelStatus      String?
+  notes            String?
+  followUpRequired Boolean  @default(false)
 
   repair Repair @relation(fields: [repairId], references: [id], onDelete: Cascade)
 }
 
-model RemovalEvent {
-  id                String   @id @default(cuid())
-  organizationId    String
-  buildingId        String
-  inventoryItemId   String
-  quantityBefore    Float
-  quantityRemoved   Float
-  quantityRemaining Float
-  unit              String
-  removedAt         DateTime
-  contractorId      String?
-  projectNumber     String?
-  workOrder         String?
-  notificationNumber String?
-  wasteShipment     String?
-  disposalFacility  String?
-  notes             String?
-  createdAt         DateTime @default(now())
+model WorkRecord {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  facilityId     String
+  buildingId     String
+  workNumber     String
+  workType       String
+  title          String
+  description    String?
+  status         String    @default("open")
+  priority       String    @default("medium")
+  dueDate        DateTime?
+  completedAt    DateTime?
+  vendorName     String?
+  contractorId   String?
+  assignedUserId String?
+  poNumber       String?
+  costEstimate   Float?
+  actualCost     Float?
+  createdById    String?
+  completedById  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  building      Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  contractor    Contractor?   @relation(fields: [contractorId], references: [id])
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client           @relation(fields: [clientId], references: [id])
+  facility     Facility         @relation(fields: [facilityId], references: [id])
+  building     Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  contractor   Contractor?      @relation(fields: [contractorId], references: [id])
+  assignedUser User?            @relation("WorkRecordAssignee", fields: [assignedUserId], references: [id])
+  createdBy    User?            @relation("WorkRecordCreator", fields: [createdById], references: [id])
+  completedBy  User?            @relation("WorkRecordCompleter", fields: [completedById], references: [id])
+  items        WorkRecordItem[]
+  documents    Document[]
+
+  @@unique([organizationId, workNumber])
+  @@index([organizationId, status, dueDate])
+  @@index([organizationId, buildingId])
+}
+
+model WorkRecordItem {
+  id              String   @id @default(cuid())
+  workRecordId    String
+  inventoryItemId String
+  workNotes       String?
+  outcome         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workRecord    WorkRecord    @relation(fields: [workRecordId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([workRecordId, inventoryItemId])
+  @@index([inventoryItemId])
+}
+
+model RemovalEvent {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  buildingId         String
+  inventoryItemId    String
+  quantityBefore     Float
+  quantityRemoved    Float
+  quantityRemaining  Float
+  unit               String
+  removedAt          DateTime
+  contractorId       String?
+  projectNumber      String?
+  workOrder          String?
+  notificationNumber String?
+  wasteShipment      String?
+  disposalFacility   String?
+  notes              String?
+  createdAt          DateTime @default(now())
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building      Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  contractor    Contractor?     @relation(fields: [contractorId], references: [id])
   photoLinks    PhotoLink[]
   documents     Document[]
   activities    ActivityEvent[]
@@ -839,34 +904,35 @@ model RemovalEvent {
 }
 
 model Contractor {
-  id             String  @id @default(cuid())
-  organizationId String
-  name           String
-  license        String?
-  contactName    String?
-  phone          String?
-  email          String?
-  address        String?
-  notes          String?
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  users          User[]
-  repairs        Repair[]
-  removals       RemovalEvent[]
+  id               String                      @id @default(cuid())
+  organizationId   String
+  name             String
+  license          String?
+  contactName      String?
+  phone            String?
+  email            String?
+  address          String?
+  notes            String?
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users            User[]
+  repairs          Repair[]
+  workRecords      WorkRecord[]
+  removals         RemovalEvent[]
   acknowledgements ContractorAcknowledgement[]
 }
 
 model ContractorAcknowledgement {
-  id             String   @id @default(cuid())
-  organizationId String
-  contractorId   String
-  buildingId     String
-  employeeName   String
-  acknowledgedAt DateTime @default(now())
-  inventoryProvided Boolean @default(true)
+  id                String    @id @default(cuid())
+  organizationId    String
+  contractorId      String
+  buildingId        String
+  employeeName      String
+  acknowledgedAt    DateTime  @default(now())
+  inventoryProvided Boolean   @default(true)
   documentsProvided String?
-  signatureId    String?
-  expiresAt      DateTime?
-  notes          String?
+  signatureId       String?
+  expiresAt         DateTime?
+  notes             String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contractor   Contractor   @relation(fields: [contractorId], references: [id])
@@ -874,49 +940,49 @@ model ContractorAcknowledgement {
 }
 
 model Photo {
-  id             String    @id @default(cuid())
-  organizationId String
-  clientId       String?
-  buildingId     String?
-  storageKey     String
+  id               String    @id @default(cuid())
+  organizationId   String
+  clientId         String?
+  buildingId       String?
+  storageKey       String
   originalFilename String
-  mimeType       String
-  size           Int
-  width          Int?
-  height         Int?
-  capturedAt     DateTime?
-  uploadedAt     DateTime  @default(now())
-  uploadedById   String?
-  photographerId String?
-  latitude       Float?
-  longitude      Float?
-  visibility     String    @default("internal")
-  exifJson       String?
+  mimeType         String
+  size             Int
+  width            Int?
+  height           Int?
+  capturedAt       DateTime?
+  uploadedAt       DateTime  @default(now())
+  uploadedById     String?
+  photographerId   String?
+  latitude         Float?
+  longitude        Float?
+  visibility       String    @default("internal")
+  exifJson         String?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       Client?      @relation(fields: [clientId], references: [id])
-  building     Building?    @relation(fields: [buildingId], references: [id])
-  uploader     User?        @relation("PhotoUploader", fields: [uploadedById], references: [id])
-  photographer User?        @relation("PhotoPhotographer", fields: [photographerId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?           @relation(fields: [clientId], references: [id])
+  building     Building?         @relation(fields: [buildingId], references: [id])
+  uploader     User?             @relation("PhotoUploader", fields: [uploadedById], references: [id])
+  photographer User?             @relation("PhotoPhotographer", fields: [photographerId], references: [id])
   links        PhotoLink[]
   annotations  PhotoAnnotation[]
 }
 
 model PhotoLink {
-  id           String  @id @default(cuid())
-  photoId      String
-  recordType   String
-  recordId     String
-  category     String
-  caption      String?
-  notes        String?
-  primaryPhoto Boolean @default(false)
-  visibility   String  @default("inherit")
+  id              String  @id @default(cuid())
+  photoId         String
+  recordType      String
+  recordId        String
+  category        String
+  caption         String?
+  notes           String?
+  primaryPhoto    Boolean @default(false)
+  visibility      String  @default("inherit")
   inventoryItemId String?
-  inspectionId String?
-  repairId     String?
-  removalId    String?
-  sampleId     String?
+  inspectionId    String?
+  repairId        String?
+  removalId       String?
+  sampleId        String?
 
   photo         Photo          @relation(fields: [photoId], references: [id], onDelete: Cascade)
   inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
@@ -939,27 +1005,28 @@ model PhotoAnnotation {
 }
 
 model Document {
-  id             String    @id @default(cuid())
-  organizationId String
-  clientId       String?
-  buildingId     String?
-  inventoryItemId String?
-  sampleId       String?
-  inspectionId   String?
-  repairId       String?
-  removalId      String?
-  name           String
-  docType        String
-  storageKey     String
+  id               String    @id @default(cuid())
+  organizationId   String
+  clientId         String?
+  buildingId       String?
+  inventoryItemId  String?
+  sampleId         String?
+  inspectionId     String?
+  repairId         String?
+  workRecordId     String?
+  removalId        String?
+  name             String
+  docType          String
+  storageKey       String
   originalFilename String
-  mimeType       String
-  size           Int
-  documentDate   DateTime?
-  description    String?
-  revision       Int       @default(0)
-  visibility     String    @default("internal")
-  uploadedById   String?
-  uploadedAt     DateTime  @default(now())
+  mimeType         String
+  size             Int
+  documentDate     DateTime?
+  description      String?
+  revision         Int       @default(0)
+  visibility       String    @default("internal")
+  uploadedById     String?
+  uploadedAt       DateTime  @default(now())
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client        Client?        @relation(fields: [clientId], references: [id])
@@ -968,66 +1035,68 @@ model Document {
   sample        Sample?        @relation(fields: [sampleId], references: [id])
   inspection    Inspection?    @relation(fields: [inspectionId], references: [id])
   repair        Repair?        @relation(fields: [repairId], references: [id])
+  workRecord    WorkRecord?    @relation(fields: [workRecordId], references: [id])
   removal       RemovalEvent?  @relation(fields: [removalId], references: [id])
   uploader      User?          @relation("DocumentUploader", fields: [uploadedById], references: [id])
   facility      Facility?      @relation(fields: [facilityId], references: [id])
   facilityId    String?
 
   @@index([organizationId, buildingId])
+  @@index([workRecordId])
   @@index([docType])
 }
 
 model FloorPlan {
-  id             String  @id @default(cuid())
-  organizationId String
-  buildingId     String
-  floorId        String?
-  name           String
-  storageKey     String
-  mimeType       String
+  id               String   @id @default(cuid())
+  organizationId   String
+  buildingId       String
+  floorId          String?
+  name             String
+  storageKey       String
+  mimeType         String
   originalFilename String
-  notes          String?
-  createdAt      DateTime @default(now())
+  notes            String?
+  createdAt        DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  building     Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  floor        BuildingFloor? @relation(fields: [floorId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building     Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor        BuildingFloor?    @relation(fields: [floorId], references: [id])
   markers      FloorPlanMarker[]
 }
 
 model FloorPlanMarker {
-  id            String  @id @default(cuid())
-  floorPlanId   String
-  recordType    String
-  recordId      String
-  markerType    String  @default("pin")
-  x             Float
-  y             Float
-  label         String?
-  geometryJson  String?
-  floorPlan     FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  floorPlanId  String
+  recordType   String
+  recordId     String
+  markerType   String    @default("pin")
+  x            Float
+  y            Float
+  label        String?
+  geometryJson String?
+  floorPlan    FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
 
   @@unique([floorPlanId, recordType, recordId])
 }
 
 model Task {
-  id             String    @id @default(cuid())
-  organizationId String
-  clientId       String?
-  buildingId     String?
+  id              String    @id @default(cuid())
+  organizationId  String
+  clientId        String?
+  buildingId      String?
   inventoryItemId String?
-  sampleId       String?
-  inspectionId   String?
-  repairId       String?
-  title          String
-  description    String?
-  assignedToId   String?
-  createdById    String?
-  dueDate        DateTime?
-  priority       String    @default("medium")
-  status         String    @default("open")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  sampleId        String?
+  inspectionId    String?
+  repairId        String?
+  title           String
+  description     String?
+  assignedToId    String?
+  createdById     String?
+  dueDate         DateTime?
+  priority        String    @default("medium")
+  status          String    @default("open")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client        Client?        @relation(fields: [clientId], references: [id])
@@ -1057,12 +1126,12 @@ model Notification {
 }
 
 model NotificationPreference {
-  id             String  @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   eventType      String
-  inApp          Boolean @default(true)
-  email          Boolean @default(true)
-  sms            Boolean @default(false)
+  inApp          Boolean      @default(true)
+  email          Boolean      @default(true)
+  sms            Boolean      @default(false)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
@@ -1083,18 +1152,18 @@ model Signature {
 }
 
 model AuditEvent {
-  id             String   @id @default(cuid())
-  organizationId String
-  userId         String?
-  action         String
-  recordType     String
-  recordId       String
-  previousValue  String?
-  newValue       String?
+  id                  String   @id @default(cuid())
+  organizationId      String
+  userId              String?
+  action              String
+  recordType          String
+  recordId            String
+  previousValue       String?
+  newValue            String?
   relatedInspectionId String?
   relatedDocumentId   String?
-  ip             String?
-  createdAt      DateTime @default(now())
+  ip                  String?
+  createdAt           DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User?        @relation(fields: [userId], references: [id])
@@ -1104,20 +1173,20 @@ model AuditEvent {
 }
 
 model ActivityEvent {
-  id             String   @id @default(cuid())
-  organizationId String
-  clientId       String?
-  buildingId     String?
+  id              String   @id @default(cuid())
+  organizationId  String
+  clientId        String?
+  buildingId      String?
   inventoryItemId String?
-  sampleId       String?
-  inspectionId   String?
-  repairId       String?
-  removalId      String?
-  actorId        String?
-  eventType      String
-  title          String
-  detail         String?
-  createdAt      DateTime @default(now())
+  sampleId        String?
+  inspectionId    String?
+  repairId        String?
+  removalId       String?
+  actorId         String?
+  eventType       String
+  title           String
+  detail          String?
+  createdAt       DateTime @default(now())
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client        Client?        @relation(fields: [clientId], references: [id])
@@ -1133,49 +1202,49 @@ model ActivityEvent {
 }
 
 model SavedView {
-  id             String  @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   userId         String?
   name           String
   entity         String
   filters        String
-  shared         Boolean @default(false)
+  shared         Boolean      @default(false)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User?        @relation(fields: [userId], references: [id])
 }
 
 model RegulatoryProfile {
-  id             String  @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   name           String
   jurisdiction   String?
-  config         String  @default("{}")
-  isDefault      Boolean @default(false)
+  config         String       @default("{}")
+  isDefault      Boolean      @default(false)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model GeneratedReport {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   reportType     String
   title          String
-  revision       Int      @default(0)
+  revision       Int          @default(0)
   storageKey     String?
-  params         String   @default("{}")
-  generatedAt    DateTime @default(now())
+  params         String       @default("{}")
+  generatedAt    DateTime     @default(now())
   generatedById  String?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model ImportJob {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   kind           String
-  status         String   @default("preview")
+  status         String       @default("preview")
   filename       String?
   mapping        String?
   summary        String?
   createdById    String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }

@@ -1,0 +1,24 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { assertBuildingAccess, can, getSession } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { Chip, Meta, PageHeader, Panel, SectionTitle } from "@/components/ui/primitives";
+import { WorkRecordEditor } from "@/components/forms/work-record-editor";
+import { WorkDocumentUpload } from "@/components/forms/work-document-upload";
+import { fileUrl } from "@/lib/files";
+import { formatDate, formatNumber } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+export default async function WorkDetail({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params; const user = await getSession(); if (!user) redirect("/login");
+  const work = await db.workRecord.findFirst({ where: { id, organizationId: user.organizationId }, include: { client: true, facility: true, building: true, contractor: true, assignedUser: true, createdBy: true, completedBy: true, items: { include: { inventoryItem: true } }, documents: { orderBy: { uploadedAt: "desc" } } } });
+  if (!work || !assertBuildingAccess(user, work.building)) notFound();
+  const [inventoryItems, assignees, contractors] = await Promise.all([db.inventoryItem.findMany({ where: { buildingId: work.buildingId }, select: { id: true, inventoryCode: true, materialDescription: true, specificLocation: true }, orderBy: { inventoryCode: "asc" } }), db.user.findMany({ where: { organizationId: user.organizationId, status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }), db.contractor.findMany({ where: { organizationId: user.organizationId }, select: { id: true, name: true }, orderBy: { name: "asc" } })]);
+  const manager = !user.isClient && (["org_admin", "environmental_manager"].includes(user.roleSlug) || can(user, "work.edit"));
+  return <div><PageHeader kicker={`${work.client.name} · ${work.facility.name} · ${work.building.buildingNumber}`} title={work.workNumber} description={work.title} actions={<Link className="btn btn-ghost" href={`/buildings/${work.buildingId}?tab=work`}>Building work</Link>} />
+    <div className="flex gap-2"><Chip tone="ice">{work.workType}</Chip><Chip tone={work.status === "completed" ? "ok" : "warn"}>{work.status.replaceAll("_", " ")}</Chip><Chip tone="danger">{work.priority}</Chip></div>
+    <div className="mt-4 grid gap-3 md:grid-cols-4"><Panel className="p-4"><Meta label="Due" value={formatDate(work.dueDate)} /></Panel><Panel className="p-4"><Meta label="Assignee" value={work.assignedUser?.name} /></Panel><Panel className="p-4"><Meta label="Vendor" value={work.contractor?.name || work.vendorName} /></Panel><Panel className="p-4"><Meta label="Completed" value={formatDate(work.completedAt)} /></Panel></div>
+    <div className="mt-6 grid gap-6 lg:grid-cols-2"><Panel className="p-5"><SectionTitle>Work details</SectionTitle><div className="grid grid-cols-2 gap-3"><Meta label="PO details" value={work.poNumber} /><Meta label="Estimated cost" value={work.costEstimate == null ? null : `$${formatNumber(work.costEstimate)}`} /><Meta label="Actual cost" value={work.actualCost == null ? null : `$${formatNumber(work.actualCost)}`} /><Meta label="Created by" value={work.createdBy?.name} /><Meta label="Completed by" value={work.completedBy?.name} /></div>{work.description && <p className="mt-4 whitespace-pre-wrap text-sm text-ink-2">{work.description}</p>}</Panel><Panel className="p-5"><SectionTitle>Affected materials</SectionTitle><div className="space-y-3">{work.items.map((item) => <div key={item.id} className="rounded-lg bg-paper-2 p-3"><Link href={`/inventory/${item.inventoryItemId}`} className="font-medium text-teal-dim">{item.inventoryItem.inventoryCode}</Link><div className="text-sm">{item.inventoryItem.materialDescription}</div>{item.workNotes && <div className="mt-1 text-xs text-ink-3">Notes: {item.workNotes}</div>}{item.outcome && <div className="text-xs text-ink-3">Outcome: {item.outcome}</div>}</div>)}{!work.items.length && <p className="text-sm text-ink-3">No inventory items linked.</p>}</div></Panel></div>
+    <Panel className="mt-6 p-5"><SectionTitle>Documents</SectionTitle>{manager && <div className="mb-4"><WorkDocumentUpload workRecordId={work.id} /></div>}<div className="space-y-2">{work.documents.map((doc) => <a key={doc.id} href={fileUrl(doc.storageKey)} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg bg-paper-2 p-3 text-sm"><span>{doc.name}</span><span className="text-ink-3">{formatDate(doc.documentDate || doc.uploadedAt)}</span></a>)}{!work.documents.length && <p className="text-sm text-ink-3">No work documents have been attached.</p>}</div></Panel>
+    {manager && <div className="mt-6"><WorkRecordEditor buildingId={work.buildingId} inventoryItems={inventoryItems} assignees={assignees} contractors={contractors} work={work} /></div>}</div>;
+}
